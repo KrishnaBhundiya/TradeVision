@@ -1,4 +1,5 @@
 def get_indicator_by_symbol(symbol: str):
+    clean_symbol = symbol.strip().upper() if symbol else ""
     data = {
         "AAPL": {
             "symbol": "AAPL",
@@ -20,8 +21,8 @@ def get_indicator_by_symbol(symbol: str):
         }
     }
 
-    return data.get(symbol.upper(), {
-        "symbol": symbol.upper(),
+    return data.get(clean_symbol, {
+        "symbol": clean_symbol,
         "rsi": None,
         "ma20": None,
         "ma50": None,

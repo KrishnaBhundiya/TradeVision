@@ -2,8 +2,13 @@ from app.services.indicator_service import get_indicator_by_symbol
 from app.services.news_service import get_news_by_symbol
 
 def get_recommendation_by_symbol(symbol: str):
-    indicator = get_indicator_by_symbol(symbol)
-    news = get_news_by_symbol(symbol)
+    clean_symbol = symbol.strip().upper() if symbol else ""
+    indicator = get_indicator_by_symbol(clean_symbol)
+
+    if indicator.get("signal") == "not_found":
+        return None
+
+    news = get_news_by_symbol(clean_symbol)
 
     rsi = indicator.get("rsi")
     signal = indicator.get("signal", "hold")
@@ -31,7 +36,7 @@ def get_recommendation_by_symbol(symbol: str):
         reason = "Mixed signals suggest waiting for a clearer setup."
 
     return {
-        "symbol": symbol.upper(),
+        "symbol": clean_symbol,
         "decision": decision,
         "confidence": confidence,
         "reason": reason,

@@ -1,4 +1,5 @@
 def get_stock_detail_by_symbol(symbol: str):
+    clean_symbol = symbol.strip().upper() if symbol else ""
     data = {
         "AAPL": {
             "symbol": "AAPL",
@@ -26,8 +27,8 @@ def get_stock_detail_by_symbol(symbol: str):
         }
     }
 
-    return data.get(symbol.upper(), {
-        "symbol": symbol.upper(),
+    return data.get(clean_symbol, {
+        "symbol": clean_symbol,
         "company_name": None,
         "current_price": None,
         "change_percent": None,
