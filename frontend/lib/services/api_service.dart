@@ -1,87 +1,72 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../models/models.dart';
+import '../core/error_handler.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String _baseUrl = 'http://127.0.0.1:8000';
+  static const Duration _timeout = Duration(seconds: 10);
 
-  Future<String> fetchBackendMessage() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/test/'),
-      );
+  static Future<Map<String, dynamic>> fetchMarketTrend() async {
+    final res = await get('/market/trend');
+    return res ?? {};
+  }
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['message']?.toString() ?? 'No message found';
-      } else {
-        throw Exception('Server error: ${response.statusCode}');
+  static Future<List<Map<String, dynamic>>> searchStocks(String query) async {
+    if (query.isEmpty) return [];
+    final res = await get('/search?q=$query');
+    if (res != null && res['results'] is List) {
+      return List<Map<String, dynamic>>.from(res['results']);
+    }
+    return [];
+  }
+
+  static Future<Map<String, dynamic>> fetchStockDetail(String symbol) async {
+    final res = await get('/stock-details/$symbol');
+    return res ?? {};
+  }
+
+  // Safe GET with timeout + retry
+  static Future<Map<String, dynamic>?> get(
+    String endpoint, {
+    int retries = 2,
+  }) async {
+    for (int attempt = 0; attempt <= retries; attempt++) {
+      try {
+        final response = await http
+            .get(
+              Uri.parse('$_baseUrl$endpoint'),
+              headers: _headers(),
+            )
+            .timeout(_timeout);
+
+        if (response.statusCode == 200) {
+          return json.decode(response.body) as Map<String, dynamic>;
+        } else if (response.statusCode == 429) {
+          // Rate limited — wait and retry
+          await Future.delayed(Duration(seconds: attempt + 1));
+          continue;
+        } else if (response.statusCode >= 500) {
+          throw NetworkException('Server error: ${response.statusCode}');
+        }
+      } on TimeoutException {
+        if (attempt == retries) {
+          throw TimeoutException('Request timed out after $_timeout');
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      } on http.ClientException catch (e) {
+        throw NetworkException('Network unavailable: ${e.message}');
+      } catch (e) {
+        if (attempt == retries) rethrow;
       }
-    } catch (e) {
-      throw Exception('Failed to fetch backend: $e');
     }
+    return null;
   }
 
-  Future<StockModel> fetchStock(String symbol) async {
-    final response = await http.get(Uri.parse('$baseUrl/stocks/$symbol'));
-    if (response.statusCode == 200) {
-      return StockModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to fetch stock for $symbol: ${response.statusCode}');
-    }
-  }
-
-  Future<StockDetailModel> fetchStockDetails(String symbol) async {
-    final response = await http.get(Uri.parse('$baseUrl/stock-details/$symbol'));
-    if (response.statusCode == 200) {
-      return StockDetailModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to fetch stock details for $symbol: ${response.statusCode}');
-    }
-  }
-
-  Future<RecommendationModel> fetchRecommendation(String symbol) async {
-    final response = await http.get(Uri.parse('$baseUrl/recommendation/$symbol'));
-    if (response.statusCode == 200) {
-      return RecommendationModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to fetch recommendation for $symbol: ${response.statusCode}');
-    }
-  }
-
-  Future<OverviewModel> fetchOverview(String symbol) async {
-    final response = await http.get(Uri.parse('$baseUrl/overview?symbol=$symbol'));
-    if (response.statusCode == 200) {
-      return OverviewModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to fetch overview for $symbol: ${response.statusCode}');
-    }
-  }
-
-  Future<NewsModel> fetchNews(String symbol) async {
-    final response = await http.get(Uri.parse('$baseUrl/news/$symbol'));
-    if (response.statusCode == 200) {
-      return NewsModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to fetch news for $symbol: ${response.statusCode}');
-    }
-  }
-
-  Future<IndicatorModel> fetchIndicators(String symbol) async {
-    final response = await http.get(Uri.parse('$baseUrl/indicators?symbol=$symbol'));
-    if (response.statusCode == 200) {
-      return IndicatorModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to fetch indicators for $symbol: ${response.statusCode}');
-    }
-  }
-
-  Future<ChartModel> fetchChart(String symbol) async {
-    final response = await http.get(Uri.parse('$baseUrl/chart/$symbol'));
-    if (response.statusCode == 200) {
-      return ChartModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to fetch chart data for $symbol: ${response.statusCode}');
-    }
-  }
+  static Map<String, String> _headers() => {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Version': '2.4.0',
+        'X-Platform': 'flutter-web',
+      };
 }
