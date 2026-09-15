@@ -1,0 +1,46 @@
+# Secrets
+.env
+*.env
+backend/.env
+frontend/.env
+
+# Python generated files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Flutter/Dart generated files
+.dart_tool/
+**/.dart_tool/
+build/
+**/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# IDE/OS
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Android generated/local files
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/android/key.properties
+frontend/android/app/build/
+frontend/android/build/
+frontend/android/.cxx/
+
+# Windows generated files
+frontend/windows/flutter/ephemeral/

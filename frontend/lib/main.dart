@@ -1,145 +1,83 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as provider;
 
-void main() {
-  runApp(const ApiTestApp());
-}
+import 'core/theme/app_theme.dart';
+import 'core/providers/portfolio_provider.dart';
+import 'core/providers/theme_provider.dart';
+import 'core/providers/market_ticker_provider.dart';
+import 'core/providers/auth_provider.dart';
+import 'router/app_router.dart';
+import 'services/storage_service.dart';
+import 'widgets/connectivity_banner.dart';
 
-class ApiTestApp extends StatelessWidget {
-  const ApiTestApp({super.key});
+import 'core/error_handler.dart';
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'API Test',
-      theme: ThemeData(useMaterial3: true),
-      home: const ApiTestPage(),
-    );
-  }
-}
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize error handler FIRST — before everything
+  AppErrorHandler.initialize();
 
-class ApiTestPage extends StatefulWidget {
-  const ApiTestPage({super.key});
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+    systemNavigationBarColor: Colors.white,
+    systemNavigationBarIconBrightness: Brightness.dark,
+  ));
 
-  @override
-  State<ApiTestPage> createState() => _ApiTestPageState();
-}
-
-class _ApiTestPageState extends State<ApiTestPage> {
-  final TextEditingController _symbolController =
-      TextEditingController(text: 'AAPL');
-
-  String output = 'Press any button to test an endpoint';
-
-  @override
-  void dispose() {
-    _symbolController.dispose();
-    super.dispose();
-  }
-
-  String get symbol {
-    final value = _symbolController.text.trim().toUpperCase();
-    return value.isEmpty ? 'AAPL' : value;
+  // Wrap entire startup in try-catch
+  try {
+    await StorageService.init();
+  } catch (e) {
+    debugPrint('StorageService init failed: $e');
+    // Continue anyway — app can run without persisted prefs
   }
 
-  Future<void> callEndpoint(String title, String url) async {
-    setState(() {
-      output = 'Loading $title...\n$url';
-    });
+  final isLoggedIn = StorageService.getIsLoggedIn();
+  final savedTheme = StorageService.getThemeMode();
+  final initialTheme = savedTheme == 'light' ? ThemeMode.light : ThemeMode.dark;
 
-    try {
-      final res = await http.get(Uri.parse(url));
-
-      String bodyText;
-      try {
-        final decoded = jsonDecode(res.body);
-        bodyText = const JsonEncoder.withIndent('  ').convert(decoded);
-      } catch (_) {
-        bodyText = res.body;
-      }
-
-      setState(() {
-        output = '''
-$title
-URL: $url
-Status: ${res.statusCode}
-
-$bodyText
-''';
-      });
-    } catch (e) {
-      setState(() {
-        output = '''
-$title
-URL: $url
-
-Exception: $e
-''';
-      });
-    }
-  }
-
-  Widget endpointButton(String label, String url) {
-    return SizedBox(
-      width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: ElevatedButton(
-          onPressed: () => callEndpoint(label, url),
-          child: Text(label),
-        ),
+  runApp(
+    ProviderScope(
+      overrides: [
+        isLoggedInProvider.overrideWith((ref) => isLoggedIn),
+        themeProvider.overrideWith((ref) => ThemeNotifier(initialTheme)),
+      ],
+      child: provider.MultiProvider(
+        providers: [
+          provider.ChangeNotifierProvider(create: (_) => PortfolioProvider()),
+          provider.ChangeNotifierProvider(create: (_) => MarketTickerNotifier()),
+        ],
+        child: const TradeVisionApp(),
       ),
-    );
-  }
+    ),
+  );
+}
+
+class TradeVisionApp extends ConsumerWidget {
+  const TradeVisionApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    const base = 'http://127.0.0.1:8000';
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeProvider);
+    final router = ref.watch(routerProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Backend Endpoint Tester')),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              TextField(
-                controller: _symbolController,
-                decoration: const InputDecoration(
-                  labelText: 'Stock Symbol',
-                  hintText: 'Enter AAPL, TSLA, MSFT...',
-                  border: OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.characters,
-              ),
-              const SizedBox(height: 12),
-              endpointButton('Test', '$base/test/'),
-              endpointButton('Stocks', '$base/stocks/$symbol'),
-              endpointButton('Stock Details', '$base/stock-details/$symbol'),
-              endpointButton('Recommendation', '$base/recommendation/$symbol'),
-              endpointButton('Overview', '$base/overview?symbol=$symbol'),
-              endpointButton('News', '$base/news/$symbol'),
-              endpointButton('Indicators', '$base/indicators?symbol=$symbol'),
-              endpointButton('Chart', '$base/chart/$symbol'),
-              const SizedBox(height: 12),
-              Expanded(
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade400),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SingleChildScrollView(
-                    child: SelectableText(output),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+    return ConnectivityWrapper(
+      child: MaterialApp.router(
+        title: 'TradeVision',
+        debugShowCheckedModeBanner: false,
+        themeMode: themeMode,
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        routerConfig: router,
       ),
     );
   }
