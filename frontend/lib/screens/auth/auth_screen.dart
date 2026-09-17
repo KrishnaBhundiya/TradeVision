@@ -269,16 +269,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     return Scaffold(
       backgroundColor: bgColor,
       body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Top Section Header
-            Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
               children: [
-                Container(
-                  width: double.infinity,
-                  height: topHeaderHeight,
+                // Top Section Header
+                Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: topHeaderHeight,
                   decoration: BoxDecoration(
                     color: headerBg,
                     borderRadius: const BorderRadius.only(
@@ -290,17 +293,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        const SizedBox(height: 8),
                         const TVLogoWidget(
                           variant: LogoVariant.iconOnly,
-                          size: 72,
+                          size: 82,
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
                         Text(
                           'TradeVision AI',
                           style: GoogleFonts.inter(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 23,
+                            fontWeight: FontWeight.w800,
                             color: Colors.white,
+                            letterSpacing: -0.3,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -308,11 +313,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           'Your AI-Powered Market Intelligence',
                           style: GoogleFonts.inter(
                             fontSize: 13,
-                            fontWeight: FontWeight.w400,
-                            color: const Color(0xFF8892A4),
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF94A3B8),
+                            letterSpacing: 0.1,
                           ),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 24),
                       ],
                     ),
                   ),
@@ -652,7 +658,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           ],
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _buildTabButton({
