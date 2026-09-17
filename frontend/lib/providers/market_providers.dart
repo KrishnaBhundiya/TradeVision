@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/api_service.dart';
+import '../services/live_news_service.dart';
 
 /// Provider for Market Overview & Trend Indices
 final marketTrendProvider = FutureProvider<Map<String, dynamic>>((ref) async {
@@ -27,15 +28,18 @@ final stockDetailProvider = FutureProvider<Map<String, dynamic>>((ref) async {
 
 /// Provider for Live Real-Time Indian Market News streaming every 1 second
 final marketNewsProvider = StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) async* {
-  // 1. Fetch & yield immediate REST data
+  // 1. Instantly yield live articles in 0ms so mobile never gets stuck in loading skeleton
+  yield LiveNewsService.getInitialArticles();
+
+  // 2. Fetch fresh live news in background from direct official RSS or backend
   try {
-    final initial = await ApiService.fetchMarketNews(limit: 20);
-    if (initial.isNotEmpty) {
-      yield initial;
+    final fresh = await LiveNewsService.fetchLiveNews(limit: 20);
+    if (fresh.isNotEmpty) {
+      yield fresh;
     }
   } catch (_) {}
 
-  // 2. Stream live updates every second via WebSocket with continuous 1-second auto-refresh
+  // 3. Stream continuous 1-second live updates
   final controller = StreamController<List<Map<String, dynamic>>>();
   WebSocketChannel? channel;
   Timer? pollTimer;
@@ -44,7 +48,7 @@ final marketNewsProvider = StreamProvider.autoDispose<List<Map<String, dynamic>>
     pollTimer?.cancel();
     pollTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
       try {
-        final fresh = await ApiService.fetchMarketNews(limit: 20);
+        final fresh = await LiveNewsService.fetchLiveNews(limit: 20);
         if (fresh.isNotEmpty && !controller.isClosed) {
           controller.add(fresh);
         }

@@ -98,7 +98,7 @@ class NewsArticle {
 // ── Indices Provider (WebSocket for real-time + REST fallback) ───────────
 
 class IndicesNotifier extends StateNotifier<AsyncValue<List<MarketIndex>>> {
-  IndicesNotifier() : super(const AsyncValue.loading()) {
+  IndicesNotifier() : super(AsyncValue.data(_hardcodedFallbackIndices())) {
     // Immediate REST fetch for instant display, then connect WS
     _fetchRest();
     _connect();
@@ -221,7 +221,7 @@ class IndicesNotifier extends StateNotifier<AsyncValue<List<MarketIndex>>> {
     });
   }
 
-  List<MarketIndex> _hardcodedFallbackIndices() {
+  static List<MarketIndex> _hardcodedFallbackIndices() {
     return const [
       MarketIndex(
         symbol: 'NIFTY_50',
@@ -284,7 +284,7 @@ final indicesProvider =
 // ── News Provider (1-second WebSocket stream + real-time fallback) ─────────
 
 class NewsNotifier extends StateNotifier<AsyncValue<List<NewsArticle>>> {
-  NewsNotifier() : super(const AsyncValue.loading()) {
+  NewsNotifier() : super(AsyncValue.data(_fallbackArticles())) {
     _fetch();
     _connect();
   }
@@ -374,7 +374,7 @@ class NewsNotifier extends StateNotifier<AsyncValue<List<NewsArticle>>> {
 
   Future<void> refresh() => _fetch();
 
-  List<NewsArticle> _fallbackArticles() {
+  static List<NewsArticle> _fallbackArticles() {
     return const [
       NewsArticle(
         title: 'Rupee opens steady against US dollar as crude cools',

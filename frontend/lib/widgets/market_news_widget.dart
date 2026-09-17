@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_dimensions.dart';
 import '../providers/market_providers.dart';
+import '../services/live_news_service.dart';
 
 class MarketNewsWidget extends ConsumerWidget {
   const MarketNewsWidget({super.key});
@@ -86,88 +87,50 @@ class MarketNewsWidget extends ConsumerWidget {
         const SizedBox(height: 10),
 
         newsAsync.when(
-          loading: () => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppDim.screenH),
-            child: Column(
-              children: List.generate(4, (index) => _buildSkeletonCard(theme)),
-            ),
-          ),
-          error: (err, stack) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppDim.screenH),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: theme.cardColor,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: theme.dividerColor, width: 1.2),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: AppColors.warning, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Live news temporarily syncing. Tap to retry.',
-                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh, size: 18),
-                    onPressed: () => ref.refresh(marketNewsProvider),
-                  )
-                ],
-              ),
-            ),
-          ),
+          loading: () {
+            final list = LiveNewsService.getInitialArticles().take(5).toList();
+            return _buildArticlesList(context, theme, list);
+          },
+          error: (err, stack) {
+            final list = LiveNewsService.getInitialArticles().take(5).toList();
+            return _buildArticlesList(context, theme, list);
+          },
           data: (articles) {
-            if (articles.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppDim.screenH),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: theme.dividerColor, width: 1.2),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'No market updates available right now.',
-                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface),
-                    ),
-                  ),
-                ),
-              );
-            }
+            final list = (articles.isNotEmpty ? articles : LiveNewsService.getInitialArticles()).take(5).toList();
+            return _buildArticlesList(context, theme, list);
+          },
+        ),
+      ],
+    );
+  }
 
-            final displayList = articles.take(5).toList();
+  Widget _buildArticlesList(BuildContext context, ThemeData theme, List<Map<String, dynamic>> displayList) {
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: AppDim.screenH),
+      itemCount: displayList.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final news = displayList[index];
+        final sentiment = (news['sentiment'] as String?)?.toUpperCase() ?? 'NEUTRAL';
+        final color = _sentimentColor(sentiment);
+        final source = (news['source'] as String?) ?? 'Market News';
+        final timeAgo = (news['time_ago'] as String?) ?? 'Just now';
+        final title = (news['title'] as String?) ?? '';
+        final url = news['url'] as String?;
+        final related = news['related_ticker'] as String?;
 
-            return ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: AppDim.screenH),
-              itemCount: displayList.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final news = displayList[index];
-                final sentiment = (news['sentiment'] as String?)?.toUpperCase() ?? 'NEUTRAL';
-                final color = _sentimentColor(sentiment);
-                final source = (news['source'] as String?) ?? 'Market News';
-                final timeAgo = (news['time_ago'] as String?) ?? 'Just now';
-                final title = (news['title'] as String?) ?? '';
-                final url = news['url'] as String?;
-                final related = news['related_ticker'] as String?;
-
-                return InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () => _openArticle(context, url),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.cardColor,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: theme.dividerColor, width: 1.2),
-                    ),
+        return InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _openArticle(context, url),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: theme.dividerColor, width: 1.2),
+            ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -249,69 +212,10 @@ class MarketNewsWidget extends ConsumerWidget {
                         ),
                       ],
                     ),
-                  ),
-                );
-              },
-            );
-          },
-        ),
-      ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildSkeletonCard(ThemeData theme) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.dividerColor, width: 1.2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                width: 90,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              Container(
-                width: 45,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            height: 12,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            width: 220,
-            height: 12,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

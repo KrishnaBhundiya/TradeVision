@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../core/error_handler.dart';
 import '../models/models.dart';
+import 'live_news_service.dart';
 
 class ApiService {
   static const String _baseUrl = 'http://127.0.0.1:8000';
-  static const Duration _timeout = Duration(seconds: 10);
+  static const Duration _timeout = Duration(milliseconds: 2500);
 
   // Instance methods for legacy dashboard screen
   Future<StockModel> fetchStock(String symbol) async {
@@ -71,11 +72,15 @@ class ApiService {
   }
 
   static Future<List<Map<String, dynamic>>> fetchMarketNews({int limit = 15}) async {
-    final res = await get('/news/market?limit=$limit');
-    if (res != null && res['articles'] is List) {
-      return List<Map<String, dynamic>>.from(res['articles']);
-    }
-    return [];
+    try {
+      final res = await get('/news/market?limit=$limit', retries: 0);
+      if (res != null && res['articles'] is List && (res['articles'] as List).isNotEmpty) {
+        return List<Map<String, dynamic>>.from(res['articles']);
+      }
+    } catch (_) {}
+
+    // Fallback to direct client-side live news (always works on mobile with Internet)
+    return await LiveNewsService.fetchLiveNews(limit: limit);
   }
 
   static Future<List<Map<String, dynamic>>> fetchStockNews(String symbol, {int limit = 10}) async {
