@@ -2119,10 +2119,10 @@ class _RSIGauge extends StatelessWidget {
             : const Color(0xFF00C853);
 
     final statusTag = rsi < 30
-        ? 'Oversold (<30)'
+        ? 'Oversold'
         : rsi > 70
-            ? 'Overbought (>70)'
-            : 'Neutral (30–70)';
+            ? 'Overbought'
+            : 'Neutral';
 
     final insightText = rsi < 30
         ? 'Selling momentum is stretched. Price may be near a technical bottom.'
@@ -2144,50 +2144,42 @@ class _RSIGauge extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.speed_rounded, size: 18, color: color),
-                  const SizedBox(width: 8),
-                  Text(
-                    'RSI Momentum Score',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? const Color(0xFFE8ECF0) : const Color(0xFF1A1A2E),
-                    ),
-                  ),
-                ],
+              Icon(Icons.speed_rounded, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                'RSI (14D)',
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? const Color(0xFFE8ECF0) : const Color(0xFF1A1A2E),
+                ),
               ),
-              Row(
-                children: [
-                  Text(
-                    rsi.toStringAsFixed(1),
-                    style: GoogleFonts.robotoMono(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                    ),
+              const Spacer(),
+              Text(
+                rsi.toStringAsFixed(1),
+                style: GoogleFonts.robotoMono(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: color.withValues(alpha: 0.35)),
+                ),
+                child: Text(
+                  statusTag,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: color,
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: color.withValues(alpha: 0.35)),
-                    ),
-                    child: Text(
-                      statusTag,
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
@@ -2205,9 +2197,9 @@ class _RSIGauge extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('0 (Oversold)', style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF64748B))),
+              Text('0 Oversold', style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF64748B))),
               Text('50 Neutral', style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF64748B))),
-              Text('100 (Overbought)', style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF64748B))),
+              Text('100 Overbought', style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF64748B))),
             ],
           ),
           const SizedBox(height: 10),

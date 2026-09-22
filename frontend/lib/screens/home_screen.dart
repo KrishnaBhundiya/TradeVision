@@ -703,42 +703,14 @@ class _MoversSection extends StatefulWidget {
   State<_MoversSection> createState() => _MoversSectionState();
 }
 
-class _MoversSectionState extends State<_MoversSection>
-    with SingleTickerProviderStateMixin {
+class _MoversSectionState extends State<_MoversSection> {
   bool _showGainers = true;
-  late AnimationController _flipController;
-  late Animation<double> _flipAnimation;
 
-  @override
-  void initState() {
-    super.initState();
-    _flipController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 550),
-    );
-    _flipAnimation = CurvedAnimation(
-      parent: _flipController,
-      curve: Curves.easeInOutCubic,
-    );
-  }
-
-  @override
-  void dispose() {
-    _flipController.dispose();
-    super.dispose();
-  }
-
-  void _flipTo(bool targetGainers) {
-    if (_showGainers == targetGainers || _flipController.isAnimating) return;
+  void _switchTab(bool targetGainers) {
+    if (_showGainers == targetGainers) return;
     HapticFeedback.selectionClick();
-
-    _flipController.forward(from: 0).then((_) {
-      if (mounted) {
-        setState(() {
-          _showGainers = targetGainers;
-          _flipController.reset();
-        });
-      }
+    setState(() {
+      _showGainers = targetGainers;
     });
   }
 
@@ -752,7 +724,7 @@ class _MoversSectionState extends State<_MoversSection>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Section header with tab toggle (clean, no swipe text)
+        // Section header with tab toggle
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
@@ -789,14 +761,14 @@ class _MoversSectionState extends State<_MoversSection>
                       label: 'Gainers',
                       isSelected: _showGainers,
                       selectedColor: const Color(0xFF00C853),
-                      onTap: () => _flipTo(true),
+                      onTap: () => _switchTab(true),
                     ),
                     const SizedBox(width: 2),
                     _MoverTab(
                       label: 'Losers',
                       isSelected: !_showGainers,
                       selectedColor: const Color(0xFFFF3B3B),
-                      onTap: () => _flipTo(false),
+                      onTap: () => _switchTab(false),
                     ),
                   ],
                 ),
@@ -807,71 +779,42 @@ class _MoversSectionState extends State<_MoversSection>
 
         const SizedBox(height: 12),
 
-        // Interactive 3D Flip Card for Gainers / Losers
+        // Instant smooth transition for Gainers / Losers
         GestureDetector(
           onHorizontalDragEnd: (details) {
             if (details.primaryVelocity == null) return;
-            if (details.primaryVelocity! < -120) {
+            if (details.primaryVelocity! < -100) {
               // Swipe left -> Losers
-              _flipTo(false);
-            } else if (details.primaryVelocity! > 120) {
+              _switchTab(false);
+            } else if (details.primaryVelocity! > 100) {
               // Swipe right -> Gainers
-              _flipTo(true);
+              _switchTab(true);
             }
           },
           behavior: HitTestBehavior.opaque,
-          child: AnimatedBuilder(
-            animation: _flipAnimation,
-            builder: (context, child) {
-              final angle = _flipAnimation.value * math.pi;
-              final isUnder = angle > (math.pi / 2);
-
-              final Widget face;
-              if (!isUnder) {
-                face = _showGainers
-                    ? _MoversList(isGainers: true, isDark: isDark, liveMovers: gainers)
-                    : _MoversList(isGainers: false, isDark: isDark, liveMovers: losers);
-              } else {
-                face = _showGainers
-                    ? _MoversList(isGainers: false, isDark: isDark, liveMovers: losers)
-                    : _MoversList(isGainers: true, isDark: isDark, liveMovers: gainers);
-              }
-
-              final scale = 1.0 + math.sin(angle) * 0.05;
-              final shadowOpacity = (math.sin(angle) * 0.24).clamp(0.0, 0.24);
-
-              final transform = Matrix4.identity()
-                ..setEntry(3, 2, 0.0014) // 3D Perspective
-                ..scale(scale);
-
-              if (!isUnder) {
-                transform.rotateY(angle);
-              } else {
-                transform.rotateY(angle - math.pi);
-              }
-
-              return Transform(
-                transform: transform,
-                alignment: Alignment.center,
-                child: Stack(
-                  children: [
-                    face,
-                    if (shadowOpacity > 0.01)
-                      Positioned.fill(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: shadowOpacity),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.03, 0),
+                  end: Offset.zero,
+                ).animate(anim),
+                child: child,
+              ),
+            ),
+            child: _showGainers
+                ? KeyedSubtree(
+                    key: const ValueKey('gainers_list'),
+                    child: _MoversList(isGainers: true, isDark: isDark, liveMovers: gainers),
+                  )
+                : KeyedSubtree(
+                    key: const ValueKey('losers_list'),
+                    child: _MoversList(isGainers: false, isDark: isDark, liveMovers: losers),
+                  ),
           ),
         ),
 
@@ -882,10 +825,10 @@ class _MoversSectionState extends State<_MoversSection>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             GestureDetector(
-              onTap: () => _flipTo(true),
+              onTap: () => _switchTab(true),
               behavior: HitTestBehavior.opaque,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
+                duration: const Duration(milliseconds: 200),
                 width: _showGainers ? 20 : 6,
                 height: 6,
                 decoration: BoxDecoration(
@@ -898,10 +841,10 @@ class _MoversSectionState extends State<_MoversSection>
             ),
             const SizedBox(width: 4),
             GestureDetector(
-              onTap: () => _flipTo(false),
+              onTap: () => _switchTab(false),
               behavior: HitTestBehavior.opaque,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
+                duration: const Duration(milliseconds: 200),
                 width: !_showGainers ? 20 : 6,
                 height: 6,
                 decoration: BoxDecoration(
