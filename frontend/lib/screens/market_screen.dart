@@ -42,6 +42,8 @@ class _MarketScreenState extends State<MarketScreen> {
   @override
   void initState() {
     super.initState();
+    _universeStocks = StockRepository.getUniverse(limit: 150);
+    _sectors = StockRepository.getAllSectors();
     _loadSectors();
     _loadUniverse();
   }
@@ -68,11 +70,13 @@ class _MarketScreenState extends State<MarketScreen> {
     setState(() => _isLoadingUniverse = true);
     try {
       final items = await ApiService.fetchStocksUniverse(
-        limit: 80,
+        limit: 150,
         sector: (sector != null && sector != 'All') ? sector : null,
       );
       if (mounted) {
-        final models = items.map((json) => StockModel.fromMasterJson(json)).toList();
+        final models = items.isNotEmpty
+            ? items.map((json) => StockModel.fromMasterJson(json)).toList()
+            : StockRepository.getUniverse(sector: sector, limit: 150);
         setState(() {
           _universeStocks = models;
           _isLoadingUniverse = false;
@@ -80,7 +84,10 @@ class _MarketScreenState extends State<MarketScreen> {
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _isLoadingUniverse = false);
+        setState(() {
+          _universeStocks = StockRepository.getUniverse(sector: sector, limit: 150);
+          _isLoadingUniverse = false;
+        });
       }
     }
   }
@@ -172,14 +179,19 @@ class _MarketScreenState extends State<MarketScreen> {
     final borderColor = isDark ? const Color(0xFF1E2733) : const Color(0xFFE2E6EA);
     final textColor = isDark ? const Color(0xFFE8ECF0) : const Color(0xFF1A1A2E);
 
-    List<StockModel> displayStocks = _universeStocks.isNotEmpty ? _universeStocks : StockRepository.stocks;
+    List<StockModel> displayStocks = _universeStocks.isNotEmpty
+        ? _universeStocks
+        : StockRepository.getUniverse(sector: selectedSector, limit: 150);
 
     if (selectedFilter == 'Gainers') {
-      displayStocks = displayStocks.where((s) => s.isPositive).toList();
+      displayStocks = displayStocks.where((s) => s.isPositive).toList()
+        ..sort((a, b) => b.changePercent.compareTo(a.changePercent));
     } else if (selectedFilter == 'Losers') {
-      displayStocks = displayStocks.where((s) => !s.isPositive).toList();
+      displayStocks = displayStocks.where((s) => !s.isPositive).toList()
+        ..sort((a, b) => a.changePercent.compareTo(b.changePercent));
     } else if (selectedFilter == '52W High') {
-      displayStocks = displayStocks.where((s) => s.changePercent > 1.0).toList();
+      displayStocks = displayStocks.where((s) => s.changePercent > 1.0).toList()
+        ..sort((a, b) => b.changePercent.compareTo(a.changePercent));
     }
 
     return Scaffold(
@@ -435,7 +447,10 @@ class _MarketScreenState extends State<MarketScreen> {
                               side: BorderSide(color: isSelected ? const Color(0xFF0066CC) : borderColor),
                             ),
                             onSelected: (_) {
-                              setState(() => selectedSector = sec);
+                              setState(() {
+                                selectedSector = sec;
+                                _universeStocks = StockRepository.getUniverse(sector: sec, limit: 150);
+                              });
                               _loadUniverse(sector: sec);
                             },
                           ),

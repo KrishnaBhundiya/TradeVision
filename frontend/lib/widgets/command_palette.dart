@@ -74,7 +74,7 @@ class _CommandPaletteState extends State<CommandPalette> {
 
     if (query.isEmpty) {
       setState(() {
-        _filteredStocks = List.from(StockRepository.stocks);
+        _filteredStocks = StockRepository.allUniverse.take(40).toList();
         _isLoading = false;
       });
       return;

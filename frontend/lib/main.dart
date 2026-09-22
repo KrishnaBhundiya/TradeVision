@@ -13,6 +13,7 @@ import 'services/storage_service.dart';
 import 'widgets/connectivity_banner.dart';
 
 import 'core/error_handler.dart';
+import 'core/data/stock_data.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,8 +41,9 @@ void main() async {
   // Wrap entire startup in try-catch
   try {
     await StorageService.init();
+    await StockRepository.loadStockUniverse();
   } catch (e) {
-    debugPrint('StorageService init failed: $e');
+    debugPrint('StorageService / StockRepository init failed: $e');
     // Continue anyway — app can run without persisted prefs
   }
 

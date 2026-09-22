@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
@@ -179,6 +181,35 @@ class StockModel {
   String get support => '₹${(price * 0.96).toInt()}';
   String get resistance => '₹${(price * 1.04).toInt()}';
 
+  Map<String, dynamic> toJson() {
+    return {
+      'symbol': nseSymbol.isNotEmpty ? nseSymbol : ticker,
+      'ticker': ticker,
+      'company_name': fullName,
+      'fullName': fullName,
+      'current_price': price,
+      'price': price,
+      'change_percent': changePercent,
+      'changePercent': changePercent,
+      'change_amount': changeAmount,
+      'previous_close': previousClose,
+      'open_price': openPrice,
+      'day_high': dayHigh,
+      'day_low': dayLow,
+      'market_cap': marketCap,
+      'pe_ratio': peRatio,
+      'week52_high': week52High,
+      'week52_low': week52Low,
+      'volume': volume,
+      'isin': isin,
+      'exchange': exchange,
+      'sector': sector,
+      'website_domain': websiteUrl.replaceAll('https://', '').replaceAll('http://', ''),
+      'ai_signal': aiSignal,
+      'ai_reason': aiReason,
+    };
+  }
+
   String get high52 => week52High;
   String get low52 => week52Low;
   List<FlSpot> get chartData => chart1D;
@@ -304,10 +335,12 @@ class StockModel {
     final double changePct;
     if (json['change_percent'] != null) {
       changePct = (json['change_percent'] as num).toDouble();
-    } else if (sym == 'LT') {
-      changePct = 0.20;
     } else {
-      changePct = 1.12;
+      final h = sym.codeUnits.fold(0, (prev, elem) => prev + elem);
+      // Roughly 45% losers, 55% gainers for realistic market balance
+      final isLoser = (h % 11 < 5);
+      final magnitude = ((h % 360) / 100.0) + 0.18; // 0.18% to 3.78%
+      changePct = double.parse((isLoser ? -magnitude : magnitude).toStringAsFixed(2));
     }
 
     final changeAmt = (json['change_amount'] as num?)?.toDouble() ?? (price * changePct / 100);
@@ -1060,7 +1093,36 @@ class StockRepository {
     ),
   ];
 
+  static final List<StockModel> _allUniverse = [];
+  static bool _isUniverseLoaded = false;
+  static bool get isUniverseLoaded => _isUniverseLoaded;
+  static List<StockModel> get allUniverse => _allUniverse.isNotEmpty ? _allUniverse : stocks;
+
   static final Map<String, StockModel> _dynamicCache = {};
+
+  static Future<void> loadStockUniverse() async {
+    if (_isUniverseLoaded && _allUniverse.isNotEmpty) return;
+    try {
+      final jsonStr = await rootBundle.loadString('assets/data/stock_universe.json');
+      final list = json.decode(jsonStr) as List<dynamic>;
+      _allUniverse.clear();
+      for (final item in list) {
+        if (item is Map<String, dynamic>) {
+          final model = StockModel.fromMasterJson(item);
+          _allUniverse.add(model);
+          _dynamicCache[model.ticker.toUpperCase()] = model;
+        }
+      }
+      // Populate hand-curated rich benchmark stocks into cache
+      for (final s in stocks) {
+        _dynamicCache[s.ticker.toUpperCase()] = s;
+      }
+      _isUniverseLoaded = true;
+      debugPrint('TradeVision: Loaded ${_allUniverse.length} stock universe into memory.');
+    } catch (e) {
+      debugPrint('TradeVision: Error loading stock universe: $e');
+    }
+  }
 
   static void registerStock(StockModel stock) {
     _dynamicCache[stock.ticker.toUpperCase()] = stock;
@@ -1090,7 +1152,8 @@ class StockRepository {
     if (_dynamicCache.containsKey(q)) {
       return _dynamicCache[q]!;
     }
-    return stocks.firstWhere(
+    final pool = _allUniverse.isNotEmpty ? _allUniverse : stocks;
+    final found = pool.firstWhere(
       (s) =>
           s.ticker.toUpperCase() == q ||
           s.nseSymbol.toUpperCase() == q ||
@@ -1101,14 +1164,36 @@ class StockRepository {
         return dyn;
       },
     );
+    _dynamicCache[q] = found;
+    return found;
   }
 
-  static List<StockModel> searchStocks(String query) {
-    final cleanQ = query.trim().toLowerCase();
-    if (cleanQ.isEmpty) return stocks;
+  static List<StockModel> getUniverse({String? sector, int limit = 80, int offset = 0}) {
+    List<StockModel> pool = _allUniverse.isNotEmpty ? _allUniverse : stocks;
+    if (sector != null && sector.isNotEmpty && sector.toLowerCase() != 'all') {
+      pool = pool.where((s) => s.sector.toLowerCase() == sector.toLowerCase()).toList();
+    }
+    if (offset >= pool.length) return [];
+    final end = (offset + limit < pool.length) ? offset + limit : pool.length;
+    return pool.sublist(offset, end);
+  }
 
-    // Search across both static curated universe and dynamic cached master stocks
-    final allAvailable = <StockModel>{...stocks, ..._dynamicCache.values};
+  static List<String> getAllSectors() {
+    final pool = _allUniverse.isNotEmpty ? _allUniverse : stocks;
+    final set = <String>{};
+    for (final s in pool) {
+      if (s.sector.isNotEmpty && s.sector != 'General Equity') {
+        set.add(s.sector);
+      }
+    }
+    final sorted = set.toList()..sort();
+    return ['All', ...sorted];
+  }
+
+  static List<StockModel> searchStocks(String query, {int limit = 50}) {
+    final cleanQ = query.trim().toLowerCase();
+    final allAvailable = _allUniverse.isNotEmpty ? _allUniverse : stocks;
+    if (cleanQ.isEmpty) return allAvailable.take(limit).toList();
 
     bool startsWithQuery(StockModel s) {
       final t = s.ticker.toLowerCase();
@@ -1123,24 +1208,76 @@ class StockRepository {
     }
 
     // 1. Exact prefix matches first
-    final exactPrefixMatches = allAvailable.where(startsWithQuery).toList();
+    final exactPrefixMatches = allAvailable.where(startsWithQuery).take(limit).toList();
+    if (exactPrefixMatches.length >= limit) return exactPrefixMatches;
 
-    // 2. Substring (contains) matches for any query length (e.g. 'z' -> TBZ, SUZLON, PFIZER)
+    // 2. Substring (contains) matches
+    final remaining = limit - exactPrefixMatches.length;
     final secondaryMatches = allAvailable.where((s) {
       if (exactPrefixMatches.contains(s)) return false;
       final t = s.ticker.toLowerCase();
       final n = s.fullName.toLowerCase();
       final nse = s.nseSymbol.toLowerCase();
-      final bse = s.bseCode.toLowerCase();
+      final isin = s.isin.toLowerCase();
       final sector = s.sector.toLowerCase();
 
       return t.contains(cleanQ) ||
              n.contains(cleanQ) ||
              nse.contains(cleanQ) ||
-             bse.contains(cleanQ) ||
+             isin.contains(cleanQ) ||
              sector.contains(cleanQ);
-    }).toList();
+    }).take(remaining).toList();
 
     return [...exactPrefixMatches, ...secondaryMatches];
+  }
+
+  static List<Map<String, dynamic>> getClientGainers({int limit = 5}) {
+    final candidates = [
+      getStock('ZOMATO'),
+      getStock('TATAMOTORS'),
+      getStock('RELIANCE'),
+      getStock('MARUTI'),
+      getStock('ICICIBANK'),
+      getStock('SBIN'),
+      getStock('INFY'),
+      getStock('TCS'),
+    ];
+    final sorted = List<StockModel>.from(candidates)
+      ..sort((a, b) => b.changePercent.compareTo(a.changePercent));
+    return sorted.take(limit).map((s) => {
+      'ticker': s.ticker,
+      'name': s.fullName,
+      'price': '₹${s.price.toStringAsFixed(2)}',
+      'rawPrice': s.price,
+      'change': '${s.changePercent >= 0 ? '+' : ''}${s.changePercent.toStringAsFixed(2)}%',
+      'changeAmount': '${s.changeAmount >= 0 ? '+' : ''}₹${s.changeAmount.toStringAsFixed(2)}',
+      'isPositive': s.changePercent >= 0,
+      'logoUrl': s.logoUrl,
+    }).toList();
+  }
+
+  static List<Map<String, dynamic>> getClientLosers({int limit = 5}) {
+    final candidates = [
+      getStock('WIPRO'),
+      getStock('HDFCBANK'),
+      getStock('INFY'),
+      getStock('SBIN'),
+      getStock('TCS'),
+      getStock('RELIANCE'),
+      getStock('MARUTI'),
+      getStock('TATAMOTORS'),
+    ];
+    final sorted = List<StockModel>.from(candidates)
+      ..sort((a, b) => a.changePercent.compareTo(b.changePercent));
+    return sorted.take(limit).map((s) => {
+      'ticker': s.ticker,
+      'name': s.fullName,
+      'price': '₹${s.price.toStringAsFixed(2)}',
+      'rawPrice': s.price,
+      'change': '${s.changePercent >= 0 ? '+' : ''}${s.changePercent.toStringAsFixed(2)}%',
+      'changeAmount': '${s.changeAmount >= 0 ? '+' : ''}₹${s.changeAmount.toStringAsFixed(2)}',
+      'isPositive': s.changePercent >= 0,
+      'logoUrl': s.logoUrl,
+    }).toList();
   }
 }

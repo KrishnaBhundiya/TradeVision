@@ -23,7 +23,9 @@ class MarketTickerNotifier extends ChangeNotifier {
   ];
 
   MarketTickerNotifier() {
-    _stocks = List<StockModel>.from(StockRepository.stocks);
+    _stocks = List<StockModel>.from(StockRepository.allUniverse.take(20));
+    _gainers = StockRepository.getClientGainers();
+    _losers = StockRepository.getClientLosers();
     _startLiveTicks();
     hydrateLiveMarket();
   }
