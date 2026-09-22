@@ -121,12 +121,33 @@ class MarketTickerNotifier extends ChangeNotifier {
 
     _tickDirections[stock.ticker] = isUp ? 1 : -1;
     _updateIndices();
+    _updateMovers();
     notifyListeners();
 
     Future.delayed(const Duration(milliseconds: 700), () {
       _tickDirections[stock.ticker] = 0;
       notifyListeners();
     });
+  }
+
+  void _updateMovers() {
+    if (_gainers.isEmpty && _losers.isEmpty) return;
+    final isGainersTarget = _random.nextBool();
+    final list = isGainersTarget ? _gainers : _losers;
+    if (list.isEmpty) return;
+    final idx = _random.nextInt(list.length);
+    final item = Map<String, dynamic>.from(list[idx]);
+    final rawP = (item['rawPrice'] as num?)?.toDouble() ?? 1000.0;
+    final isUp = isGainersTarget ? (_random.nextDouble() > 0.35) : (_random.nextDouble() > 0.65);
+    final delta = (rawP * (_random.nextDouble() * 0.0012 + 0.0002)) * (isUp ? 1 : -1);
+    final newP = rawP + delta;
+    final chgPctStr = (item['change'] as String? ?? '0%').replaceAll('%', '').replaceAll('+', '');
+    final chgPct = (double.tryParse(chgPctStr) ?? 1.0) + (isUp ? 0.02 : -0.02);
+    item['rawPrice'] = newP;
+    item['price'] = '₹${newP.toStringAsFixed(2)}';
+    item['change'] = '${chgPct >= 0 ? '+' : ''}${chgPct.toStringAsFixed(2)}%';
+    item['isPositive'] = chgPct >= 0;
+    list[idx] = item;
   }
 
   void _updateIndices() {
