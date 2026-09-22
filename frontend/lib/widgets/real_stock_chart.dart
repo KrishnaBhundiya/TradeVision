@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../core/models/ohlc_point.dart' show ChartType;
 import '../core/data/stock_data.dart';
 import '../services/storage_service.dart';
+import '../services/api_service.dart';
 import 'shimmer_skeleton.dart';
 
 // ── DATA MODEL ───────────────────────────────────────────────────────────
@@ -83,8 +84,74 @@ class _RealStockChartState extends State<RealStockChart> {
     _chartType = widget.chartType ?? (saved == 'line' ? ChartType.line : ChartType.candlestick);
     final stock = StockRepository.getStock(widget.ticker);
     _currentPrice = stock.price;
-    _generateRealisticData();
+    _loadRealExchangeCandles();
     _startLiveFeed();
+  }
+
+  double? get _chartMinY {
+    if (_data.isEmpty) return null;
+    final minVal = _data.map((d) => d.low).reduce(min);
+    final maxVal = _data.map((d) => d.high).reduce(max);
+    if (minVal <= 0 || minVal >= maxVal) {
+      final base = minVal > 0 ? minVal : 100.0;
+      return base * 0.95;
+    }
+    final spread = maxVal - minVal;
+    return (minVal - spread * 0.05).clamp(0.01, double.infinity);
+  }
+
+  double? get _chartMaxY {
+    if (_data.isEmpty) return null;
+    final minVal = _data.map((d) => d.low).reduce(min);
+    final maxVal = _data.map((d) => d.high).reduce(max);
+    if (maxVal <= 0 || minVal >= maxVal) {
+      final base = maxVal > 0 ? maxVal : 100.0;
+      return base * 1.05;
+    }
+    final spread = maxVal - minVal;
+    return maxVal + spread * 0.05;
+  }
+
+  bool get _effectiveIsPositive {
+    final stock = StockRepository.getStock(widget.ticker);
+    if (widget.period == '1D') {
+      return stock.changeAmount != 0 ? (stock.changeAmount >= 0) : stock.isPositive;
+    }
+    if (_data.length > 1) {
+      return _data.last.close >= _data.first.open;
+    }
+    return stock.isPositive;
+  }
+
+  Future<void> _loadRealExchangeCandles() async {
+    _generateRealisticData();
+    try {
+      final res = await ApiService.fetchLiveCandles(widget.ticker, period: widget.period);
+      if (res != null && res['candles'] is List) {
+        final list = (res['candles'] as List);
+        if (list.isNotEmpty && mounted) {
+          final exchangeData = list.map((c) {
+            final ts = c['time'] as int? ?? 0;
+            return OHLCData(
+              time: DateTime.fromMillisecondsSinceEpoch(ts * 1000),
+              open: (c['open'] as num).toDouble(),
+              high: (c['high'] as num).toDouble(),
+              low: (c['low'] as num).toDouble(),
+              close: (c['close'] as num).toDouble(),
+              volume: (c['volume'] as num).toDouble(),
+            );
+          }).toList();
+
+          if (exchangeData.isNotEmpty && exchangeData.last.close > 0) {
+            setState(() {
+              _data = exchangeData;
+              _currentPrice = exchangeData.last.close;
+              _isPositive = _effectiveIsPositive;
+            });
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -100,7 +167,7 @@ class _RealStockChartState extends State<RealStockChart> {
 
     // Always fetch latest reference price and metrics from repository
     final stock = StockRepository.getStock(widget.ticker);
-    final targetPrice = stock.price;
+    final targetPrice = stock.price > 0 ? stock.price : 145.50;
     _currentPrice = targetPrice;
 
     // Period-specific settings
@@ -112,37 +179,39 @@ class _RealStockChartState extends State<RealStockChart> {
     final double volatility;
 
     if (widget.period == '1D') {
-      startPrice = stock.openPrice > 0 ? stock.openPrice : (targetPrice - stock.changeAmount);
-      volatility = targetPrice * 0.0022;
+      final changeAmount = stock.changeAmount != 0 ? stock.changeAmount : (targetPrice * 0.012);
+      startPrice = max(targetPrice - changeAmount, targetPrice * 0.5);
+      volatility = max(targetPrice * 0.009, 0.40); // Active intraday waves
     } else {
       // Historical period return to give realistic macroeconomic context
       final double periodReturn;
       switch (widget.period) {
         case '1W':
-          periodReturn = stock.isPositive ? 0.018 : -0.015;
+          periodReturn = stock.isPositive ? 0.028 : -0.024;
           break;
         case '1M':
-          periodReturn = stock.isPositive ? 0.042 : -0.035;
+          periodReturn = stock.isPositive ? 0.065 : -0.055;
           break;
         case '3M':
-          periodReturn = stock.isPositive ? 0.085 : -0.065;
+          periodReturn = stock.isPositive ? 0.125 : -0.095;
           break;
         case '6M':
-          periodReturn = stock.isPositive ? 0.140 : -0.110;
+          periodReturn = stock.isPositive ? 0.190 : -0.150;
           break;
         case '1Y':
-          periodReturn = stock.isPositive ? 0.240 : -0.180;
+          periodReturn = stock.isPositive ? 0.320 : -0.220;
           break;
         default: // MAX
-          periodReturn = stock.isPositive ? 0.550 : -0.320;
+          periodReturn = stock.isPositive ? 0.650 : -0.380;
           break;
       }
-      startPrice = targetPrice / (1.0 + periodReturn);
-      volatility = targetPrice * _getVolatility(widget.period);
+      startPrice = max(targetPrice / (1.0 + periodReturn), targetPrice * 0.4);
+      volatility = max(targetPrice * _getVolatility(widget.period), 0.50);
     }
 
-    // Brownian Bridge generation: strictly guarantees closes[0] == startPrice
-    // and closes[bars] == targetPrice, with realistic organic market fluctuations!
+    // Brownian Bridge generation with organic wave harmonics:
+    // Guarantees closes[0] == startPrice and closes[bars] == targetPrice,
+    // with distinct peaks, troughs, pullbacks, and rallies (visible ups and downs)!
     final closes = List<double>.filled(bars + 1, 0.0);
     closes[0] = startPrice;
     closes[bars] = targetPrice;
@@ -150,7 +219,7 @@ class _RealStockChartState extends State<RealStockChart> {
     final raw = List<double>.filled(bars + 1, 0.0);
     raw[0] = 0.0;
     for (int i = 1; i <= bars; i++) {
-      final step = (_random.nextDouble() - 0.495) * volatility;
+      final step = (_random.nextDouble() - 0.492) * volatility;
       raw[i] = raw[i - 1] + step;
     }
 
@@ -158,7 +227,10 @@ class _RealStockChartState extends State<RealStockChart> {
       final t = i / bars;
       final bridge = raw[i] - t * raw[bars];
       final linear = startPrice + t * (targetPrice - startPrice);
-      closes[i] = linear + bridge;
+      // Dual harmonic waves create natural market cycles: morning dip, midday rally, afternoon test
+      final wave1 = sin(t * pi * 3.4) * (volatility * 1.8);
+      final wave2 = cos(t * pi * 6.6) * (volatility * 1.1);
+      closes[i] = linear + bridge * 2.2 + wave1 + wave2;
     }
 
     for (int i = 0; i < bars; i++) {
@@ -166,26 +238,26 @@ class _RealStockChartState extends State<RealStockChart> {
       final open = closes[i];
       final close = closes[i + 1];
 
-      final wickMult = 0.25 + _random.nextDouble() * 0.35;
-      final high = max(open, close) + volatility * wickMult;
-      final low = min(open, close) - volatility * wickMult * 0.8;
+      final candleDelta = (close - open).abs();
+      final wickMult = 0.35 + _random.nextDouble() * 0.55;
+      final high = max(open, close) + max(volatility * wickMult * 0.7, candleDelta * 0.5);
+      final low = min(open, close) - max(volatility * wickMult * 0.65, candleDelta * 0.45);
 
-      final candleSize = (open - close).abs();
-      final baseVol = 500000 + _random.nextInt(1500000);
-      final vol = baseVol * (1 + candleSize / targetPrice * 10);
+      final baseVol = 800000 + _random.nextInt(2500000);
+      final vol = baseVol * (1 + candleDelta / targetPrice * 12);
 
       _data.add(OHLCData(
         time: time,
         open: open,
         high: high,
-        low: max(low, targetPrice * 0.40),
+        low: max(low, targetPrice * 0.30),
         close: close,
         volume: vol,
       ));
     }
 
     _currentPrice = _data.last.close;
-    _isPositive = _data.last.close >= _data.first.open;
+    _isPositive = _effectiveIsPositive;
   }
 
   Map<String, dynamic> _getPeriodConfig(String period) {
@@ -209,26 +281,26 @@ class _RealStockChartState extends State<RealStockChart> {
 
   double _getVolatility(String period) {
     switch (period) {
-      case '1D':  return 0.0025; // tight — intraday moves
-      case '1W':  return 0.0040;
-      case '1M':  return 0.0060;
-      case '3M':  return 0.0080;
-      case '6M':  return 0.0100;
-      case '1Y':  return 0.0140;
-      default:    return 0.0180; // MAX — widest swings
+      case '1D':  return 0.009; // active intraday price waves
+      case '1W':  return 0.016;
+      case '1M':  return 0.024;
+      case '3M':  return 0.035;
+      case '6M':  return 0.050;
+      case '1Y':  return 0.075;
+      default:    return 0.095; // MAX — prominent cyclical waves
     }
   }
 
-  // Live tick — new candle every 3 seconds in 1D view
+  // Live tick — updates price every 1.5 seconds with organic price action
   void _startLiveFeed() {
     if (widget.period != '1D') return;
 
-    _liveTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!mounted) return;
+    _liveTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+      if (!mounted || _data.isEmpty) return;
       setState(() {
         final last = _data.last;
-        final tick = (_random.nextDouble() - 0.48) * last.close * 0.002;
-        final newPrice = last.close + tick;
+        final tickPct = (_random.nextDouble() - 0.49) * 0.0035;
+        final newPrice = double.parse((last.close * (1 + tickPct)).toStringAsFixed(2));
         final newHigh = max(last.high, newPrice);
         final newLow = min(last.low, newPrice);
 
@@ -239,11 +311,11 @@ class _RealStockChartState extends State<RealStockChart> {
           high: newHigh,
           low: newLow,
           close: newPrice,
-          volume: last.volume + _random.nextInt(10000),
+          volume: last.volume + _random.nextInt(15000),
         );
 
         _currentPrice = newPrice;
-        _isPositive = _data.last.close >= _data.first.open;
+        _isPositive = _effectiveIsPositive;
       });
     });
   }
@@ -263,7 +335,7 @@ class _RealStockChartState extends State<RealStockChart> {
       setState(() {
         _isPeriodLoading = true;
       });
-      _generateRealisticData();
+      _loadRealExchangeCandles();
       _startLiveFeed();
       Future.delayed(const Duration(milliseconds: 280), () {
         if (mounted) {
@@ -278,7 +350,8 @@ class _RealStockChartState extends State<RealStockChart> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final chartColor = _isPositive
+    final isBullish = _effectiveIsPositive;
+    final chartColor = isBullish
         ? const Color(0xFF00C853)
         : const Color(0xFFFF3B3B);
 
@@ -585,7 +658,10 @@ class _RealStockChartState extends State<RealStockChart> {
 
       primaryYAxis: NumericAxis(
         opposedPosition: true, // Price axis on RIGHT like real apps
-        numberFormat: NumberFormat('₹#,###', 'en_IN'),
+        numberFormat: NumberFormat('₹#,##0.00', 'en_IN'),
+        minimum: _chartMinY,
+        maximum: _chartMaxY,
+        rangePadding: ChartRangePadding.none,
         axisLine: const AxisLine(color: Color(0xFF1E2733)),
         majorGridLines: MajorGridLines(
           width: 0.5,
@@ -616,9 +692,9 @@ class _RealStockChartState extends State<RealStockChart> {
           // Bear candle (close < open)
           bearColor: const Color(0xFFFF3B3B),
 
-          // Hollow candles for bull — like professional platforms
-          enableSolidCandles: false,
-          borderWidth: 1.5,
+          // Solid filled candles for vibrant, unmistakable price movements
+          enableSolidCandles: true,
+          borderWidth: 1.2,
 
           // Wick styling
           animationDuration: 400,
@@ -737,7 +813,10 @@ class _RealStockChartState extends State<RealStockChart> {
 
       primaryYAxis: NumericAxis(
         opposedPosition: true,
-        numberFormat: NumberFormat('₹#,###', 'en_IN'),
+        numberFormat: NumberFormat('₹#,##0.00', 'en_IN'),
+        minimum: _chartMinY,
+        maximum: _chartMaxY,
+        rangePadding: ChartRangePadding.none,
         axisLine: const AxisLine(color: Color(0xFF1E2733)),
         majorGridLines: MajorGridLines(
           width: 0.5,

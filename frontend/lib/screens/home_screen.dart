@@ -82,6 +82,16 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        provider.Provider.of<MarketTickerNotifier>(context, listen: false).hydrateLiveMarket();
+      }
+    });
+  }
+
   void _showQuickPortfolioSheet(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? DarkSurface.card : Colors.white;
@@ -735,6 +745,9 @@ class _MoversSectionState extends State<_MoversSection>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tickerNotifier = provider.Provider.of<MarketTickerNotifier>(context);
+    final gainers = tickerNotifier.gainers;
+    final losers = tickerNotifier.losers;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -765,8 +778,8 @@ class _MoversSectionState extends State<_MoversSection>
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: isDark
-                        ? const Color(0xFF1E2733)
-                        : const Color(0xFFE2E6EA),
+                      ? const Color(0xFF1E2733)
+                      : const Color(0xFFE2E6EA),
                   ),
                 ),
                 child: Row(
@@ -816,12 +829,12 @@ class _MoversSectionState extends State<_MoversSection>
               final Widget face;
               if (!isUnder) {
                 face = _showGainers
-                    ? _MoversList(isGainers: true, isDark: isDark)
-                    : _MoversList(isGainers: false, isDark: isDark);
+                    ? _MoversList(isGainers: true, isDark: isDark, liveMovers: gainers)
+                    : _MoversList(isGainers: false, isDark: isDark, liveMovers: losers);
               } else {
                 face = _showGainers
-                    ? _MoversList(isGainers: false, isDark: isDark)
-                    : _MoversList(isGainers: true, isDark: isDark);
+                    ? _MoversList(isGainers: false, isDark: isDark, liveMovers: losers)
+                    : _MoversList(isGainers: true, isDark: isDark, liveMovers: gainers);
               }
 
               final scale = 1.0 + math.sin(angle) * 0.05;
@@ -910,16 +923,21 @@ class _MoversSectionState extends State<_MoversSection>
 class _MoversList extends StatelessWidget {
   final bool isGainers;
   final bool isDark;
+  final List<Map<String, dynamic>>? liveMovers;
 
-  const _MoversList({required this.isGainers, required this.isDark});
+  const _MoversList({
+    required this.isGainers,
+    required this.isDark,
+    this.liveMovers,
+  });
 
-  static const gainers = [
+  static const defaultGainers = [
     {'ticker': 'BAJFINANCE', 'name': 'Bajaj Finance Ltd.',    'price': '₹7,284.50', 'change': '+3.42%'},
-    {'ticker': 'RELIANCE',   'name': 'Reliance Industries',   'price': '₹2,896.25', 'change': '+1.82%'},
+    {'ticker': 'RELIANCE',   'name': 'Reliance Industries',   'price': '₹1,247.40', 'change': '+1.82%'},
     {'ticker': 'HDFCBANK',   'name': 'HDFC Bank Ltd.',        'price': '₹1,723.40', 'change': '+1.54%'},
   ];
 
-  static const losers = [
+  static const defaultLosers = [
     {'ticker': 'TCS',    'name': 'Tata Consultancy Services', 'price': '₹3,538.30', 'change': '-0.93%'},
     {'ticker': 'INFY',   'name': 'Infosys Ltd.',              'price': '₹1,775.60', 'change': '-0.67%'},
     {'ticker': 'WIPRO',  'name': 'Wipro Ltd.',                'price': '₹558.10',   'change': '-0.74%'},
@@ -927,7 +945,9 @@ class _MoversList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stocks = isGainers ? gainers : losers;
+    final stocks = (liveMovers != null && liveMovers!.isNotEmpty)
+        ? liveMovers!
+        : (isGainers ? defaultGainers : defaultLosers);
     final color = isGainers
         ? const Color(0xFF00C853)
         : const Color(0xFFFF3B3B);
@@ -954,7 +974,29 @@ class _MoversList extends StatelessWidget {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
-                onTap: () => context.push('/stock-detail/${s['ticker']}'),
+                onTap: () {
+                  // Register the mover's authenticated live price so StockDetailScreen
+                  // immediately shows the correct price without waiting for network.
+                  final ticker = s['ticker'] as String? ?? '';
+                  final rawPrice = s['rawPrice'];
+                  if (ticker.isNotEmpty && rawPrice != null) {
+                    final baseSym = ticker.replaceAll('.NS', '').replaceAll('.BO', '').toUpperCase();
+                    final livePrice = rawPrice is num ? rawPrice.toDouble() : double.tryParse(rawPrice.toString()) ?? 0.0;
+                    if (livePrice > 0) {
+                      final registered = StockModel.fromMasterJson({
+                        'symbol': baseSym,
+                        'company_name': s['name'] ?? baseSym,
+                        'current_price': livePrice,
+                        'change_percent': double.tryParse((s['change'] as String? ?? '0%').replaceAll('%', '').replaceAll('+', '')) ?? 0.0,
+                        'change_amount': 0.0,
+                        'is_positive': s['isPositive'] ?? true,
+                        'website_domain': '',
+                      });
+                      StockRepository.registerStock(registered);
+                    }
+                  }
+                  context.push('/stock-detail/${s['ticker']}');
+                },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 10),

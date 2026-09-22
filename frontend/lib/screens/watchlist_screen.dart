@@ -128,7 +128,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                               : const Color(0xFF1A1A2E),
                         ),
                         decoration: InputDecoration(
-                          hintText: 'Search stocks by name or symbol...',
+                          hintText: 'Search',
                           hintStyle: GoogleFonts.inter(
                             fontSize: 14,
                             color: const Color(0xFF8892A4),

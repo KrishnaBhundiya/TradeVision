@@ -3,12 +3,16 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../data/stock_data.dart';
+import '../../services/api_service.dart';
 
 class MarketTickerNotifier extends ChangeNotifier {
   late List<StockModel> _stocks;
   final Map<String, int> _tickDirections = {}; // 1 for up, -1 for down, 0 for none
   Timer? _timer;
   final Random _random = Random();
+
+  List<Map<String, dynamic>> _gainers = [];
+  List<Map<String, dynamic>> _losers = [];
 
   List<Map<String, dynamic>> _indices = [
     {'name': 'NIFTY 50',    'value': 23242.40, 'change': 24.80, 'changePercent': 0.11, 'up': true},
@@ -21,10 +25,60 @@ class MarketTickerNotifier extends ChangeNotifier {
   MarketTickerNotifier() {
     _stocks = List<StockModel>.from(StockRepository.stocks);
     _startLiveTicks();
+    hydrateLiveMarket();
   }
 
   List<StockModel> get stocks => _stocks;
   List<Map<String, dynamic>> get indices => _indices;
+  List<Map<String, dynamic>> get gainers => _gainers;
+  List<Map<String, dynamic>> get losers => _losers;
+
+  Future<void> hydrateLiveMarket() async {
+    try {
+      // 1. Fetch real exchange indices
+      final liveIndices = await ApiService.fetchLiveIndices();
+      if (liveIndices.isNotEmpty) {
+        _indices = liveIndices.map((idx) => {
+          'name': idx['name'] ?? '',
+          'value': (idx['price'] as num?)?.toDouble() ?? 0.0,
+          'change': (idx['change'] as num?)?.toDouble() ?? 0.0,
+          'changePercent': (idx['changePercent'] as num?)?.toDouble() ?? 0.0,
+          'up': idx['isPositive'] ?? true,
+        }).toList();
+        notifyListeners();
+      }
+
+      // 2. Fetch real live top movers (gainers & losers)
+      final movers = await ApiService.fetchLiveMovers();
+      if (movers != null) {
+        if (movers['gainers'] is List && (movers['gainers'] as List).isNotEmpty) {
+          _gainers = List<Map<String, dynamic>>.from(movers['gainers']);
+        }
+        if (movers['losers'] is List && (movers['losers'] as List).isNotEmpty) {
+          _losers = List<Map<String, dynamic>>.from(movers['losers']);
+        }
+        notifyListeners();
+      }
+
+      // 3. Hydrate top benchmark stocks for watchlist
+      final topTickers = ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'BAJFINANCE', 'ICICIBANK', 'SBIN', 'TATAMOTORS'];
+      for (final t in topTickers) {
+        final q = await ApiService.fetchLiveQuote(t);
+        if (q != null && q['current_price'] != null) {
+          final model = StockModel.fromMasterJson(q);
+          StockRepository.registerStock(model);
+          final idx = _stocks.indexWhere((s) => s.ticker == t);
+          if (idx != -1) {
+            _stocks[idx] = model;
+          } else {
+            _stocks.add(model);
+          }
+        }
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
 
   int getTickDirection(String ticker) {
     return _tickDirections[ticker] ?? 0;
