@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/alert_model.dart';
 import '../core/data/stock_data.dart';
+import 'notification_service.dart';
 
 class AlertService {
   static final AlertService instance = AlertService._internal();
@@ -117,6 +118,12 @@ class AlertService {
         _save();
         _alertTriggeredController.add(alert);
         HapticFeedback.heavyImpact();
+        NotificationService.instance.showNotification(
+          id: alert.id.hashCode,
+          title: 'TradeVision Alert: ${alert.ticker}',
+          body: message,
+          payload: alert.ticker,
+        );
       }
     }
   }
@@ -157,6 +164,12 @@ class AlertService {
         _save();
         _alertTriggeredController.add(alert);
         HapticFeedback.heavyImpact();
+        NotificationService.instance.showNotification(
+          id: alert.id.hashCode,
+          title: 'TradeVision AI Signal Alert',
+          body: message,
+          payload: alert.ticker,
+        );
       }
     }
   }

@@ -48,7 +48,6 @@ class _CommandPaletteState extends State<CommandPalette> {
 
   List<StockModel> _filteredStocks = [];
   Timer? _debounceTimer;
-  bool _isLoading = false;
 
   @override
   void initState() {
@@ -130,7 +129,6 @@ class _CommandPaletteState extends State<CommandPalette> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0F172A) : Colors.white;
     final border = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
-    final cardBg = isDark ? const Color(0xFF142033) : const Color(0xFFF8FAFC);
     final size = MediaQuery.of(context).size;
     final dialogWidth = size.width > 680 ? 620.0 : size.width * 0.94;
 

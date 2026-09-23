@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -23,7 +24,7 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -56,7 +57,7 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
           ],
         ),
         content: Text(
-          'This will reset your paper trading balance back to simulated ₹1,00,000 and clear all positions and trade history.',
+          'This will reset your paper trading balance back to simulated ₹1,00,000 and clear all positions, limit orders, and trade history.',
           style: GoogleFonts.inter(
             fontSize: 13,
             color: isDark ? Colors.white70 : const Color(0xFF475569),
@@ -108,7 +109,7 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
         final floatingPnL = portfolio.getPnL();
         final floatingPnLPct = portfolio.getPnLPercent();
         final isProfit = floatingPnL >= 0;
-        final pnlColor = isProfit ? const Color(0xFF00C853) : const Color(0xFFFF3B3B);
+        final spots = portfolio.getEquitySpots();
 
         return Scaffold(
           backgroundColor: isDark ? const Color(0xFF0A0E1A) : const Color(0xFFF4F6F9),
@@ -139,7 +140,7 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Paper Trading Mode',
+                  'Paper Trading 100% Pro',
                   style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -165,10 +166,10 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
           ),
           body: Column(
             children: [
-              // ── Top Balance Card ───────────────────────────────────
+              // ── Top Balance Card with Equity Curve ─────────────────
               Container(
                 margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: isDark
@@ -208,7 +209,7 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            'SIMULATED',
+                            'SIMULATED ₹1L',
                             style: GoogleFonts.inter(
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
@@ -218,17 +219,17 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
                       currencyFormatter.format(totalValue),
                       style: GoogleFonts.robotoMono(
-                        fontSize: 30,
+                        fontSize: 28,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Row(
                       children: [
                         Icon(
@@ -239,7 +240,7 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                         Text(
                           '${isProfit ? "+" : ""}${currencyFormatter.format(floatingPnL)} (${isProfit ? "+" : ""}${floatingPnLPct.toStringAsFixed(2)}%)',
                           style: GoogleFonts.inter(
-                            fontSize: 13,
+                            fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: isProfit ? const Color(0xFF4ADE80) : const Color(0xFFF87171),
                           ),
@@ -251,27 +252,50 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+
+                    // ── Mini Equity Curve Sparkline ────────────────────────
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 50,
+                      child: LineChart(
+                        LineChartData(
+                          gridData: const FlGridData(show: false),
+                          titlesData: const FlTitlesData(show: false),
+                          borderData: FlBorderData(show: false),
+                          lineTouchData: const LineTouchData(enabled: false),
+                          lineBarsData: [
+                            LineChartBarData(
+                              spots: spots,
+                              isCurved: true,
+                              color: isProfit ? const Color(0xFF4ADE80) : const Color(0xFF38BDF8),
+                              barWidth: 2,
+                              isStrokeCapRound: true,
+                              dotData: const FlDotData(show: false),
+                              belowBarData: BarAreaData(
+                                show: true,
+                                color: (isProfit ? const Color(0xFF4ADE80) : const Color(0xFF38BDF8))
+                                    .withValues(alpha: 0.18),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
                     const Divider(color: Colors.white24, height: 1),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Available Cash',
-                                style: GoogleFonts.inter(fontSize: 11, color: Colors.white70),
-                              ),
+                              Text('Available Cash', style: GoogleFonts.inter(fontSize: 11, color: Colors.white70)),
                               const SizedBox(height: 2),
                               Text(
                                 currencyFormatter.format(virtualCash),
-                                style: GoogleFonts.robotoMono(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
+                                style: GoogleFonts.robotoMono(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
                               ),
                             ],
                           ),
@@ -280,18 +304,11 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Invested',
-                                style: GoogleFonts.inter(fontSize: 11, color: Colors.white70),
-                              ),
+                              Text('Invested', style: GoogleFonts.inter(fontSize: 11, color: Colors.white70)),
                               const SizedBox(height: 2),
                               Text(
                                 currencyFormatter.format(totalInvested),
-                                style: GoogleFonts.robotoMono(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
+                                style: GoogleFonts.robotoMono(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
                               ),
                             ],
                           ),
@@ -300,18 +317,11 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Win Rate',
-                                style: GoogleFonts.inter(fontSize: 11, color: Colors.white70),
-                              ),
+                              Text('Win Rate', style: GoogleFonts.inter(fontSize: 11, color: Colors.white70)),
                               const SizedBox(height: 2),
                               Text(
                                 '${portfolio.winRate.toStringAsFixed(0)}%',
-                                style: GoogleFonts.robotoMono(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF4ADE80),
-                                ),
+                                style: GoogleFonts.robotoMono(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF4ADE80)),
                               ),
                             ],
                           ),
@@ -338,10 +348,11 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                   ),
                   labelColor: Colors.white,
                   unselectedLabelColor: const Color(0xFF8892A4),
-                  labelStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700),
+                  labelStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
                   tabs: [
-                    Tab(text: 'Open Positions (${portfolio.positions.length})'),
-                    Tab(text: 'Trade Ledger (${portfolio.tradeHistory.length})'),
+                    Tab(text: 'Positions (${portfolio.positions.length})'),
+                    Tab(text: 'Limit Orders (${portfolio.activeLimitOrders.length})'),
+                    Tab(text: 'Ledger (${portfolio.tradeHistory.length})'),
                   ],
                 ),
               ),
@@ -392,59 +403,55 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                                   borderRadius: BorderRadius.circular(14),
                                   child: Padding(
                                     padding: const EdgeInsets.all(14),
-                                    child: Column(
+                                    child: Row(
                                       children: [
-                                        Row(
+                                        TickerLogo(
+                                          ticker: stock.ticker,
+                                          logoUrl: stock.logoUrl,
+                                          logoColor: stock.logoColor,
+                                          size: 36,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                pos.ticker,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                                ),
+                                              ),
+                                              Text(
+                                                '${pos.quantity} Shares • Avg ₹${pos.avgPrice.toStringAsFixed(2)}',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 11,
+                                                  color: const Color(0xFF8892A4),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.end,
                                           children: [
-                                            TickerLogo(
-                                              ticker: stock.ticker,
-                                              logoUrl: stock.logoUrl,
-                                              logoColor: stock.logoColor,
-                                              size: 36,
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    pos.ticker,
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 14,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    '${pos.quantity} Shares • Avg ₹${pos.avgPrice.toStringAsFixed(2)}',
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 11,
-                                                      color: const Color(0xFF8892A4),
-                                                    ),
-                                                  ),
-                                                ],
+                                            Text(
+                                              currencyFormatter.format(currentValue),
+                                              style: GoogleFonts.robotoMono(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                                color: isDark ? Colors.white : const Color(0xFF0F172A),
                                               ),
                                             ),
-                                            Column(
-                                              crossAxisAlignment: CrossAxisAlignment.end,
-                                              children: [
-                                                Text(
-                                                  currencyFormatter.format(currentValue),
-                                                  style: GoogleFonts.robotoMono(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '${posProfit ? "+" : ""}${currencyFormatter.format(positionPnL)} (${posProfit ? "+" : ""}${positionPnLPct.toStringAsFixed(2)}%)',
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: posProfit ? const Color(0xFF00C853) : const Color(0xFFFF3B3B),
-                                                  ),
-                                                ),
-                                              ],
+                                            Text(
+                                              '${posProfit ? "+" : ""}${currencyFormatter.format(positionPnL)} (${posProfit ? "+" : ""}${positionPnLPct.toStringAsFixed(2)}%)',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: posProfit ? const Color(0xFF00C853) : const Color(0xFFFF3B3B),
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -456,7 +463,109 @@ class _PaperTradingScreenState extends State<PaperTradingScreen>
                             },
                           ),
 
-                    // Tab 2: Trade History Ledger
+                    // Tab 2: Limit Orders
+                    portfolio.limitOrders.isEmpty
+                        ? _buildEmptyState(
+                            isDark: isDark,
+                            title: 'No Limit Orders',
+                            subtitle: 'Place target price limit orders on any stock to execute automatically when triggered.',
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            itemCount: portfolio.limitOrders.length,
+                            itemBuilder: (context, idx) {
+                              final order = portfolio.limitOrders[idx];
+                              final isBuy = order.isBuy;
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  side: BorderSide(
+                                    color: isDark ? const Color(0xFF1E2733) : const Color(0xFFE2E6EA),
+                                  ),
+                                ),
+                                color: isDark ? const Color(0xFF111827) : Colors.white,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: isBuy
+                                              ? const Color(0xFF00C853).withValues(alpha: 0.12)
+                                              : const Color(0xFFFF3B3B).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          isBuy ? 'LIMIT BUY' : 'LIMIT SELL',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            color: isBuy ? const Color(0xFF00C853) : const Color(0xFFFF3B3B),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              order.ticker,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                              ),
+                                            ),
+                                            Text(
+                                              '${order.quantity} Shares @ Target ₹${order.limitPrice.toStringAsFixed(2)}',
+                                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF8892A4)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (order.isExecuted)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF00C853).withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            'EXECUTED',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF00C853),
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        IconButton(
+                                          icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFFFF3B3B)),
+                                          tooltip: 'Cancel Order',
+                                          onPressed: () {
+                                            portfolio.cancelLimitOrder(order.id);
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                content: Text('Limit order cancelled'),
+                                                behavior: SnackBarBehavior.floating,
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+
+                    // Tab 3: Trade History Ledger
                     portfolio.tradeHistory.isEmpty
                         ? _buildEmptyState(
                             isDark: isDark,

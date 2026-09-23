@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../data/stock_data.dart';
 import '../../services/api_service.dart';
 import '../../services/alert_service.dart';
+import 'portfolio_provider.dart';
 
 class MarketTickerNotifier extends ChangeNotifier {
   late List<StockModel> _stocks;
@@ -137,6 +138,7 @@ class MarketTickerNotifier extends ChangeNotifier {
     _stocks[index] = updatedStock;
     StockRepository.registerStock(updatedStock);
     AlertService.instance.evaluateStock(updatedStock);
+    PortfolioProvider.instance?.evaluateLimitOrders(updatedStock);
 
     _tickDirections[stock.ticker] = isUp ? 1 : -1;
     _updateIndices();

@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/stock_data.dart';
+import '../../services/notification_service.dart';
 
 class PaperTrade {
   final String id;
@@ -47,6 +49,50 @@ class PaperTrade {
   );
 }
 
+class LimitOrder {
+  final String id;
+  final String ticker;
+  final String stockName;
+  final bool isBuy;
+  final int quantity;
+  final double limitPrice;
+  final DateTime createdAt;
+  bool isExecuted;
+
+  LimitOrder({
+    required this.id,
+    required this.ticker,
+    required this.stockName,
+    required this.isBuy,
+    required this.quantity,
+    required this.limitPrice,
+    DateTime? createdAt,
+    this.isExecuted = false,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'ticker': ticker,
+    'stockName': stockName,
+    'isBuy': isBuy,
+    'quantity': quantity,
+    'limitPrice': limitPrice,
+    'createdAt': createdAt.toIso8601String(),
+    'isExecuted': isExecuted,
+  };
+
+  factory LimitOrder.fromJson(Map<String, dynamic> map) => LimitOrder(
+    id: map['id'] ?? '',
+    ticker: map['ticker'] ?? '',
+    stockName: map['stockName'] ?? '',
+    isBuy: map['isBuy'] ?? true,
+    quantity: (map['quantity'] as num?)?.toInt() ?? 1,
+    limitPrice: (map['limitPrice'] as num?)?.toDouble() ?? 0.0,
+    createdAt: map['createdAt'] != null ? DateTime.tryParse(map['createdAt']) : null,
+    isExecuted: map['isExecuted'] ?? false,
+  );
+}
+
 class PaperPosition {
   final String ticker;
   final String stockName;
@@ -85,22 +131,32 @@ class PortfolioProvider extends ChangeNotifier {
   static const String _storageKeyPositions = 'tradevision_paper_positions_v2';
   static const String _storageKeyTrades = 'tradevision_paper_trades_v2';
   static const String _storageKeyRealized = 'tradevision_paper_realized_v2';
+  static const String _storageKeyLimitOrders = 'tradevision_paper_limits_v2';
+  static const String _storageKeyEquity = 'tradevision_paper_equity_v2';
 
   double _virtualCash = initialCapital;
   final Map<String, PaperPosition> _positions = {};
   final List<PaperTrade> _tradeHistory = [];
+  final List<LimitOrder> _limitOrders = [];
+  final List<double> _equityHistory = [initialCapital];
   double _realizedPnL = 0.0;
   final List<StockModel> _watchlist = List.from(StockRepository.stocks);
+  static PortfolioProvider? instance;
 
   PortfolioProvider() {
+    instance = this;
     _loadFromPrefs();
   }
 
   double get virtualCash => _virtualCash;
   double get realizedPnL => _realizedPnL;
   List<PaperTrade> get tradeHistory => List.unmodifiable(_tradeHistory);
+  List<LimitOrder> get limitOrders => List.unmodifiable(_limitOrders);
+  List<LimitOrder> get activeLimitOrders =>
+      _limitOrders.where((o) => !o.isExecuted).toList();
   Map<String, PaperPosition> get positions => _positions;
   List<StockModel> get watchlist => _watchlist;
+  List<double> get equityHistory => List.unmodifiable(_equityHistory);
 
   // Legacy compatibility getters for existing screens
   Map<String, int> get holdings => _positions.map((k, v) => MapEntry(k, v.quantity));
@@ -151,6 +207,21 @@ class PortfolioProvider extends ChangeNotifier {
     return (winningTradesCount / closedTrades) * 100;
   }
 
+  List<FlSpot> getEquitySpots() {
+    if (_equityHistory.isEmpty) return [const FlSpot(0, initialCapital)];
+    return List.generate(_equityHistory.length, (i) {
+      return FlSpot(i.toDouble(), _equityHistory[i]);
+    });
+  }
+
+  void _recordEquityPoint() {
+    final curVal = totalPortfolioValue;
+    _equityHistory.add(curVal);
+    if (_equityHistory.length > 40) {
+      _equityHistory.removeAt(0);
+    }
+  }
+
   Future<void> _loadFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -176,6 +247,25 @@ class PortfolioProvider extends ChangeNotifier {
           _tradeHistory.add(PaperTrade.fromJson(Map<String, dynamic>.from(item)));
         }
       }
+      final limitsRaw = prefs.getString(_storageKeyLimitOrders);
+      if (limitsRaw != null && limitsRaw.isNotEmpty) {
+        final list = jsonDecode(limitsRaw) as List;
+        _limitOrders.clear();
+        for (final item in list) {
+          _limitOrders.add(LimitOrder.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+      final equityRaw = prefs.getString(_storageKeyEquity);
+      if (equityRaw != null && equityRaw.isNotEmpty) {
+        final list = jsonDecode(equityRaw) as List;
+        _equityHistory.clear();
+        for (final item in list) {
+          _equityHistory.add((item as num).toDouble());
+        }
+      }
+      if (_equityHistory.isEmpty) {
+        _equityHistory.add(initialCapital);
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('[PortfolioProvider] Load error: $e');
@@ -194,6 +284,14 @@ class PortfolioProvider extends ChangeNotifier {
       await prefs.setString(
         _storageKeyTrades,
         jsonEncode(_tradeHistory.map((t) => t.toJson()).toList()),
+      );
+      await prefs.setString(
+        _storageKeyLimitOrders,
+        jsonEncode(_limitOrders.map((o) => o.toJson()).toList()),
+      );
+      await prefs.setString(
+        _storageKeyEquity,
+        jsonEncode(_equityHistory),
       );
     } catch (e) {
       debugPrint('[PortfolioProvider] Save error: $e');
@@ -240,6 +338,7 @@ class PortfolioProvider extends ChangeNotifier {
       ),
     );
 
+    _recordEquityPoint();
     _saveToPrefs();
     notifyListeners();
   }
@@ -278,15 +377,77 @@ class PortfolioProvider extends ChangeNotifier {
       ),
     );
 
+    _recordEquityPoint();
     _saveToPrefs();
     notifyListeners();
+  }
+
+  void placeLimitOrder({
+    required StockModel stock,
+    required bool isBuy,
+    required int quantity,
+    required double limitPrice,
+  }) {
+    final order = LimitOrder(
+      id: 'limit_${DateTime.now().millisecondsSinceEpoch}',
+      ticker: stock.ticker.toUpperCase(),
+      stockName: stock.fullName,
+      isBuy: isBuy,
+      quantity: quantity,
+      limitPrice: limitPrice,
+    );
+    _limitOrders.insert(0, order);
+    _saveToPrefs();
+    notifyListeners();
+  }
+
+  void cancelLimitOrder(String id) {
+    _limitOrders.removeWhere((o) => o.id == id);
+    _saveToPrefs();
+    notifyListeners();
+  }
+
+  /// Evaluates pending limit orders against current tick price
+  void evaluateLimitOrders(StockModel stock) {
+    final ticker = stock.ticker.toUpperCase();
+    final price = stock.price;
+
+    for (final order in _limitOrders) {
+      if (order.isExecuted) continue;
+      if (order.ticker.toUpperCase() != ticker) continue;
+
+      bool shouldExecute = false;
+      if (order.isBuy && price <= order.limitPrice) {
+        shouldExecute = true;
+      } else if (!order.isBuy && price >= order.limitPrice) {
+        shouldExecute = true;
+      }
+
+      if (shouldExecute) {
+        order.isExecuted = true;
+        if (order.isBuy) {
+          buyStock(stock, order.quantity);
+        } else {
+          sellStock(stock, order.quantity);
+        }
+        NotificationService.instance.showNotification(
+          id: order.id.hashCode,
+          title: 'Limit Order Executed!',
+          body: '${order.isBuy ? "Bought" : "Sold"} ${order.quantity} shares of ${order.ticker} at ₹${price.toStringAsFixed(2)}',
+          payload: order.ticker,
+        );
+      }
+    }
   }
 
   void resetPortfolio() {
     _virtualCash = initialCapital;
     _positions.clear();
     _tradeHistory.clear();
+    _limitOrders.clear();
     _realizedPnL = 0.0;
+    _equityHistory.clear();
+    _equityHistory.add(initialCapital);
     _saveToPrefs();
     notifyListeners();
   }

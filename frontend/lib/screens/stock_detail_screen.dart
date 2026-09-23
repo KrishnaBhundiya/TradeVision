@@ -682,6 +682,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
   void _openOrderSheet(BuildContext context, {required bool isBuy}) {
     HapticFeedback.mediumImpact();
     int quantity = 1;
+    bool isLimitOrder = false;
+    double limitPrice = _stock.price;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     showModalBottomSheet(
@@ -695,7 +697,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setModalState) {
-            final totalValue = _stock.price * quantity;
+            final portfolio = provider.Provider.of<PortfolioProvider>(context, listen: false);
+            final totalValue = (isLimitOrder ? limitPrice : _stock.price) * quantity;
             final currencyFormatter = NumberFormat('₹#,##,##0.00', 'en_IN');
             final bottomPadding = math.max(MediaQuery.of(ctx).padding.bottom, 22.0) +
                 MediaQuery.of(ctx).viewInsets.bottom;
@@ -787,7 +790,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Virtual Cash: ₹5,00,000.00 • Practice Trading',
+                                    'Virtual Cash: ${currencyFormatter.format(portfolio.virtualCash)} • Paper Trading',
                                     style: GoogleFonts.inter(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w500,
@@ -847,7 +850,108 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                         color: isDark ? const Color(0xFF1E2733) : const Color(0xFFE2E6EA),
                         height: 1,
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
+
+                      // Order Type Segmented Switch (Market vs Limit)
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E2A3A) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () => setModalState(() => isLimitOrder = false),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: !isLimitOrder ? const Color(0xFF0066CC) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'Market (Instant)',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: !isLimitOrder ? Colors.white : const Color(0xFF8892A4),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () => setModalState(() => isLimitOrder = true),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: isLimitOrder ? const Color(0xFF0066CC) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'Limit (Target Price)',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: isLimitOrder ? Colors.white : const Color(0xFF8892A4),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (isLimitOrder) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Target Limit Price',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? const Color(0xFFE8ECF0) : const Color(0xFF1A1A2E),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline_rounded),
+                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  onPressed: limitPrice > 1
+                                      ? () => setModalState(() => limitPrice = double.parse((limitPrice - 1.0).toStringAsFixed(2)))
+                                      : null,
+                                ),
+                                Text(
+                                  currencyFormatter.format(limitPrice),
+                                  style: GoogleFonts.robotoMono(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF0066CC),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline_rounded),
+                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  onPressed: () => setModalState(() => limitPrice = double.parse((limitPrice + 1.0).toStringAsFixed(2))),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                      ],
 
                       // Quantity Selector with - and + buttons
                       Row(
@@ -937,6 +1041,30 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                         quantity: quantity,
                         onConfirmed: () {
                           final portfolio = provider.Provider.of<PortfolioProvider>(context, listen: false);
+                          if (isLimitOrder) {
+                            portfolio.placeLimitOrder(
+                              stock: _stock,
+                              isBuy: isBuy,
+                              quantity: quantity,
+                              limitPrice: limitPrice,
+                            );
+                            Future.delayed(const Duration(milliseconds: 1200), () {
+                              if (Navigator.canPop(ctx)) {
+                                Navigator.pop(ctx);
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Placed Limit ${isBuy ? "BUY" : "SELL"} for $quantity shares of ${_stock.ticker} at ₹${limitPrice.toStringAsFixed(2)}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                  backgroundColor: const Color(0xFF0066CC),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            });
+                            return;
+                          }
                           final cost = _stock.price * quantity;
                           if (isBuy && portfolio.virtualCash < cost) {
                             ScaffoldMessenger.of(context).showSnackBar(

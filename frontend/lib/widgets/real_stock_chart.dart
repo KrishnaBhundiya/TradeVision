@@ -353,7 +353,7 @@ class _RealStockChartState extends State<RealStockChart> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isBullish = _effectiveIsPositive;
+    final isBullish = _isPositive;
     final chartColor = isBullish
         ? const Color(0xFF00C853)
         : const Color(0xFFFF3B3B);
@@ -511,52 +511,97 @@ class _RealStockChartState extends State<RealStockChart> {
           ),
         ),
 
-        // ── Hovered candle info bar ──────────────────────────────────────
-        if (_hoveredCandle != null)
-          Padding(
-            padding: EdgeInsets.fromLTRB(hPad, 8, hPad, 0),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF1E2A3A)
-                    : const Color(0xFFF0F4F8),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  _OHLCLabel('O',
-                    NumberFormat('₹#,##,##0.00', 'en_IN')
-                        .format(_hoveredCandle!.open),
-                    _hoveredCandle!.isBullish
-                        ? const Color(0xFF00C853)
-                        : const Color(0xFFFF3B3B),
+        // ── Candle HUD bar (always active & prominent for presentations) ──
+        Padding(
+          padding: EdgeInsets.fromLTRB(hPad, 6, hPad, 0),
+          child: Builder(
+            builder: (context) {
+              final candle = _hoveredCandle ?? (_data.isNotEmpty ? _data.last : null);
+              if (candle == null) return const SizedBox.shrink();
+              final isHovering = _hoveredCandle != null;
+              final isBull = candle.isBullish;
+              final statusColor = isBull ? const Color(0xFF00C853) : const Color(0xFFFF3B3B);
+              final timeStr = widget.period == '1D'
+                  ? DateFormat('HH:mm').format(candle.time)
+                  : DateFormat('dd MMM').format(candle.time);
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF1E2A3A).withValues(alpha: 0.85)
+                      : const Color(0xFFF0F4F8),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isHovering
+                        ? const Color(0xFF0066CC).withValues(alpha: 0.6)
+                        : Colors.transparent,
+                    width: 1,
                   ),
-                  const SizedBox(width: 12),
-                  _OHLCLabel('H',
-                    NumberFormat('₹#,##,##0.00', 'en_IN')
-                        .format(_hoveredCandle!.high),
-                    const Color(0xFF00C853),
-                  ),
-                  const SizedBox(width: 12),
-                  _OHLCLabel('L',
-                    NumberFormat('₹#,##,##0.00', 'en_IN')
-                        .format(_hoveredCandle!.low),
-                    const Color(0xFFFF3B3B),
-                  ),
-                  const SizedBox(width: 12),
-                  _OHLCLabel('C',
-                    NumberFormat('₹#,##,##0.00', 'en_IN')
-                        .format(_hoveredCandle!.close),
-                    _hoveredCandle!.isBullish
-                        ? const Color(0xFF00C853)
-                        : const Color(0xFFFF3B3B),
-                  ),
-                ],
-              ),
-            ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (isHovering ? const Color(0xFF0066CC) : statusColor).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isHovering ? 'CROSSHAIR' : 'LATEST',
+                        style: GoogleFonts.inter(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w700,
+                          color: isHovering ? const Color(0xFF38BDF8) : statusColor,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      timeStr,
+                      style: GoogleFonts.robotoMono(
+                        fontSize: 9,
+                        color: const Color(0xFF8892A4),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    _OHLCLabel('O',
+                      NumberFormat('₹#,##0.00', 'en_IN').format(candle.open),
+                      statusColor,
+                    ),
+                    const SizedBox(width: 8),
+                    _OHLCLabel('H',
+                      NumberFormat('₹#,##0.00', 'en_IN').format(candle.high),
+                      const Color(0xFF00C853),
+                    ),
+                    const SizedBox(width: 8),
+                    _OHLCLabel('L',
+                      NumberFormat('₹#,##0.00', 'en_IN').format(candle.low),
+                      const Color(0xFFFF3B3B),
+                    ),
+                    const SizedBox(width: 8),
+                    _OHLCLabel('C',
+                      NumberFormat('₹#,##0.00', 'en_IN').format(candle.close),
+                      statusColor,
+                    ),
+                    if (isHovering) ...[
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _hoveredCandle = null);
+                        },
+                        child: const Icon(Icons.close, size: 13, color: Color(0xFF8892A4)),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
           ),
+        ),
 
         const SizedBox(height: 8),
 
@@ -595,6 +640,17 @@ class _RealStockChartState extends State<RealStockChart> {
     return SfCartesianChart(
       backgroundColor: Colors.transparent,
       plotAreaBorderWidth: 0,
+      onTrackballPositionChanging: (TrackballArgs args) {
+        final idx = args.chartPointInfo.dataPointIndex;
+        if (idx != null && idx >= 0 && idx < _data.length) {
+          if (_hoveredCandle != _data[idx]) {
+            HapticFeedback.selectionClick();
+            setState(() {
+              _hoveredCandle = _data[idx];
+            });
+          }
+        }
+      },
 
       // Crosshair for professional feel
       crosshairBehavior: CrosshairBehavior(
@@ -768,6 +824,17 @@ class _RealStockChartState extends State<RealStockChart> {
     return SfCartesianChart(
       backgroundColor: Colors.transparent,
       plotAreaBorderWidth: 0,
+      onTrackballPositionChanging: (TrackballArgs args) {
+        final idx = args.chartPointInfo.dataPointIndex;
+        if (idx != null && idx >= 0 && idx < _data.length) {
+          if (_hoveredCandle != _data[idx]) {
+            HapticFeedback.selectionClick();
+            setState(() {
+              _hoveredCandle = _data[idx];
+            });
+          }
+        }
+      },
 
       crosshairBehavior: CrosshairBehavior(
         enable: true,
