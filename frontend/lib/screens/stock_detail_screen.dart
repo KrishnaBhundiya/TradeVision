@@ -49,6 +49,20 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
   bool _techLoading = true;
   bool _fundLoading = true;
 
+  static double? _toDbl(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
+  }
+
+  static int? _toI(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? double.tryParse(v)?.toInt();
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -110,7 +124,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
     final dynamicSignal = (_technicals['ai_signal'] as String?)?.isNotEmpty == true
         ? (_technicals['ai_signal'] as String)
         : _stock.aiRecommendation;
-    final dynamicConfidence = (_technicals['ai_confidence'] as num?)?.toDouble()
+    final dynamicConfidence = _toDbl(_technicals['ai_confidence'])
         ?? ((_stock.sentimentScore * 100).clamp(45.0, 96.0));
     AiExplanationSheet.show(
       context,
@@ -334,7 +348,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                         signal: (_technicals['ai_signal'] as String?)?.isNotEmpty == true
                             ? (_technicals['ai_signal'] as String)
                             : _stock.aiSignal,
-                        confidence: (_technicals['ai_confidence'] as num?)?.toInt(),
+                        confidence: _toI(_technicals['ai_confidence']),
                         onTap: () => _showSignalDisclaimerSheet(context),
                       ),
                     ],
@@ -365,7 +379,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                   ),
                   const SizedBox(height: 12),
                   RealStockChart(
-                    key: ValueKey('${_stock.ticker}_${_stock.price}_$_selectedPeriod'),
+                    key: ValueKey('${_stock.ticker}_$_selectedPeriod'),
                     ticker: _stock.ticker,
                     period: _selectedPeriod,
                     chartType: ref.watch(chartPatternProvider),
@@ -373,6 +387,20 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                       ref.read(chartPatternProvider.notifier).setChartType(newType);
                     },
                     showHeader: false,
+                    onPriceTick: (livePrice) {
+                      if (!mounted) return;
+                      final prevPrice = _stock.price - _stock.changeAmount;
+                      final newChg = double.parse((livePrice - prevPrice).toStringAsFixed(2));
+                      final newPct = double.parse((prevPrice > 0 ? (newChg / prevPrice * 100) : 0.0).toStringAsFixed(2));
+                      setState(() {
+                        _stock = _stock.copyWith(
+                          price: livePrice,
+                          changeAmount: newChg,
+                          changePercent: newPct,
+                        );
+                      });
+                      StockRepository.registerStock(_stock);
+                    },
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -967,15 +995,15 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
     }
 
     final aiSignal = (_technicals['ai_signal'] as String? ?? _stock.aiSignal).toUpperCase();
-    final confidence = (_technicals['ai_confidence'] as num?)?.toInt() ?? 72;
+    final confidence = _toI(_technicals['ai_confidence']) ?? 72;
     final aiReason = _technicals['ai_reason'] as String? ?? _stock.aiReason;
-    final buyersPct = (_technicals['buyers_pct'] as num?)?.toDouble() ?? 54.0;
-    final sellersPct = (_technicals['sellers_pct'] as num?)?.toDouble() ?? 46.0;
-    final buySellRatio = (_technicals['buy_sell_ratio'] as num?)?.toDouble() ?? 1.17;
-    final rsi = (_technicals['rsi'] as num?)?.toDouble();
-    final macd = (_technicals['macd'] as num?)?.toDouble();
-    final stoch = (_technicals['stochastic'] as num?)?.toDouble();
-    final volSurge = (_technicals['vol_surge_pct'] as num?)?.toDouble() ?? 100.0;
+    final buyersPct = _toDbl(_technicals['buyers_pct']) ?? 54.0;
+    final sellersPct = _toDbl(_technicals['sellers_pct']) ?? 46.0;
+    final buySellRatio = _toDbl(_technicals['buy_sell_ratio']) ?? 1.17;
+    final rsi = _toDbl(_technicals['rsi']);
+    final macd = _toDbl(_technicals['macd']);
+    final stoch = _toDbl(_technicals['stochastic']);
+    final volSurge = _toDbl(_technicals['vol_surge_pct']) ?? 100.0;
 
     final signalColor = switch (aiSignal) {
       'BUY' || 'STRONG BUY' => const Color(0xFF00C853),
@@ -1205,19 +1233,19 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
     }
 
     final currencyFormatter = NumberFormat('₹#,##,##0.00', 'en_IN');
-    final rsi = (_technicals['rsi'] as num?)?.toDouble() ?? 50.0;
-    final ma20 = (_technicals['ma20'] as num?)?.toDouble();
-    final ma50 = (_technicals['ma50'] as num?)?.toDouble();
-    final ma200 = (_technicals['ma200'] as num?)?.toDouble();
-    final macd = (_technicals['macd'] as num?)?.toDouble();
-    final macdSig = (_technicals['macd_signal'] as num?)?.toDouble();
-    final macdHist = (_technicals['macd_histogram'] as num?)?.toDouble();
-    final bollUp = (_technicals['bollinger_upper'] as num?)?.toDouble();
-    final bollMid = (_technicals['bollinger_mid'] as num?)?.toDouble();
-    final bollDn = (_technicals['bollinger_lower'] as num?)?.toDouble();
-    final atr = (_technicals['atr'] as num?)?.toDouble();
-    final support = (_technicals['support'] as num?)?.toDouble() ?? (_stock.price * 0.95);
-    final resistance = (_technicals['resistance'] as num?)?.toDouble() ?? (_stock.price * 1.05);
+    final rsi = _toDbl(_technicals['rsi']) ?? 50.0;
+    final ma20 = _toDbl(_technicals['ma20']) ?? _toDbl(_technicals['ma_20']);
+    final ma50 = _toDbl(_technicals['ma50']) ?? _toDbl(_technicals['ma_50']);
+    final ma200 = _toDbl(_technicals['ma200']) ?? _toDbl(_technicals['ma_200']);
+    final macd = _toDbl(_technicals['macd']);
+    final macdSig = _toDbl(_technicals['macd_signal']) ?? _toDbl(_technicals['signal_val']);
+    final macdHist = _toDbl(_technicals['macd_histogram']);
+    final bollUp = _toDbl(_technicals['bollinger_upper']);
+    final bollMid = _toDbl(_technicals['bollinger_mid']);
+    final bollDn = _toDbl(_technicals['bollinger_lower']);
+    final atr = _toDbl(_technicals['atr']);
+    final support = _toDbl(_technicals['support']) ?? _toDbl(_technicals['support_1']) ?? (_stock.price * 0.95);
+    final resistance = _toDbl(_technicals['resistance']) ?? _toDbl(_technicals['resistance_1']) ?? (_stock.price * 1.05);
     final week52High = double.tryParse(_stock.week52High.replaceAll(RegExp(r'[^0-9.]'), '')) ?? (_stock.price * 1.25);
     final week52Low  = double.tryParse(_stock.week52Low.replaceAll(RegExp(r'[^0-9.]'), '')) ?? (_stock.price * 0.75);
 

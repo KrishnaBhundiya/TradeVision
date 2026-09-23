@@ -448,42 +448,41 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 10),
 
-              // Market Pulse Cards Horizontal Scroll Strip (Live Real-Time Stream)
+              // Market Pulse Cards Horizontal Scroll Strip (Continuous Real-Time Live Ticker)
               Consumer(
                 builder: (context, ref, _) {
-                  final indicesAsync = ref.watch(indicesProvider);
-                  return indicesAsync.when(
-                    data: (indices) {
-                      final items = indices.isNotEmpty ? indices : null;
-                      if (items == null) return _buildStaticPulseList();
-                      return SizedBox(
-                        height: 130,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 12),
-                          itemBuilder: (context, index) {
-                            final item = items[index];
-                            final sign = item.change >= 0 ? '+' : '';
-                            final changeStr = '$sign${item.change.toStringAsFixed(2)}';
-                            final pctStr = '$sign${item.changePercent.toStringAsFixed(2)}%';
-                            final valueStr = NumberFormat('#,##0.00').format(item.price);
-                            return MarketPulseCard(
-                              indexName: item.name,
-                              value: valueStr,
-                              change: changeStr,
-                              changePercent: pctStr,
-                              isPositive: item.isPositive,
-                            );
-                          },
-                        ),
-                      );
-                    },
-                    loading: () => _buildStaticPulseList(),
-                    error: (_, __) => _buildStaticPulseList(),
-                  );
+                  final liveIndices = tickerNotifier.indices;
+                  if (liveIndices.isNotEmpty) {
+                    return SizedBox(
+                      height: 130,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: liveIndices.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) {
+                          final item = liveIndices[index];
+                          final val = (item['value'] as num?)?.toDouble() ?? 0.0;
+                          final chg = (item['change'] as num?)?.toDouble() ?? 0.0;
+                          final pct = (item['changePercent'] as num?)?.toDouble() ?? 0.0;
+                          final isPos = (item['up'] as bool?) ?? (chg >= 0);
+                          final sign = chg >= 0 ? '+' : '';
+                          final changeStr = '$sign${chg.toStringAsFixed(2)}';
+                          final pctStr = '$sign${pct.toStringAsFixed(2)}%';
+                          final valueStr = NumberFormat('#,##0.00').format(val);
+                          return MarketPulseCard(
+                            indexName: item['name'] as String? ?? 'INDEX',
+                            value: valueStr,
+                            change: changeStr,
+                            changePercent: pctStr,
+                            isPositive: isPos,
+                          );
+                        },
+                      ),
+                    );
+                  }
+                  return _buildStaticPulseList();
                 },
               ),
 
@@ -926,16 +925,14 @@ class _MoversList extends StatelessWidget {
                     final baseSym = ticker.replaceAll('.NS', '').replaceAll('.BO', '').toUpperCase();
                     final livePrice = rawPrice is num ? rawPrice.toDouble() : double.tryParse(rawPrice.toString()) ?? 0.0;
                     if (livePrice > 0) {
-                      final registered = StockModel.fromMasterJson({
-                        'symbol': baseSym,
-                        'company_name': s['name'] ?? baseSym,
-                        'current_price': livePrice,
-                        'change_percent': double.tryParse((s['change'] as String? ?? '0%').replaceAll('%', '').replaceAll('+', '')) ?? 0.0,
-                        'change_amount': 0.0,
-                        'is_positive': s['isPositive'] ?? true,
-                        'website_domain': '',
-                      });
-                      StockRepository.registerStock(registered);
+                      final chgPct = double.tryParse((s['change'] as String? ?? '0%').replaceAll('%', '').replaceAll('+', '')) ?? 0.0;
+                      final existing = StockRepository.getStock(baseSym);
+                      final updated = existing.copyWith(
+                        price: livePrice,
+                        changePercent: chgPct,
+                        changeAmount: livePrice * (chgPct / 100),
+                      );
+                      StockRepository.registerStock(updated);
                     }
                   }
                   context.push('/stock-detail/${s['ticker']}');

@@ -126,6 +126,31 @@ class ApiService {
       final res = await get('/api/live/quote/$cleanSym', retries: 0);
       if (res is Map<String, dynamic> && res.isNotEmpty) return res;
     } catch (_) {}
+
+    try {
+      final yfQuote = await _fetchYahooQuote(cleanSym);
+      if (yfQuote != null && yfQuote['current_price'] != null) {
+        final stock = StockRepository.getStock(cleanSym);
+        return {
+          'symbol': cleanSym,
+          'ticker': cleanSym,
+          'company_name': stock.fullName,
+          'current_price': yfQuote['current_price'],
+          'price': yfQuote['price'],
+          'change_amount': yfQuote['change_amount'],
+          'change': yfQuote['change'],
+          'change_percent': yfQuote['change_percent'],
+          'changePercent': yfQuote['changePercent'],
+          'is_positive': yfQuote['is_positive'],
+          'isPositive': yfQuote['isPositive'],
+          'day_high': yfQuote['day_high'],
+          'day_low': yfQuote['day_low'],
+          'volume': stock.volume,
+          'sector': stock.sector,
+        };
+      }
+    } catch (_) {}
+
     return StockRepository.getStock(cleanSym).toJson();
   }
 
@@ -138,11 +163,70 @@ class ApiService {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> _fetchYahooQuote(String symbol) async {
+    try {
+      final yfSym = symbol.startsWith('^') ? symbol : (symbol.endsWith('.NS') || symbol.endsWith('.BO') ? symbol : '$symbol.NS');
+      final encoded = Uri.encodeComponent(yfSym);
+      final url = Uri.parse('https://query1.finance.yahoo.com/v8/finance/chart/$encoded?interval=1d&range=1d');
+      final res = await http.get(url, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(milliseconds: 3200));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final meta = data['chart']?['result']?[0]?['meta'];
+        if (meta != null && meta['regularMarketPrice'] != null) {
+          final price = (meta['regularMarketPrice'] as num).toDouble();
+          final prevClose = (meta['chartPreviousClose'] as num?)?.toDouble() ?? price;
+          final change = double.parse((price - prevClose).toStringAsFixed(2));
+          final changePct = double.parse((prevClose > 0 ? (change / prevClose * 100) : 0.0).toStringAsFixed(2));
+          return {
+            'current_price': price,
+            'price': price,
+            'change_amount': change,
+            'change': change,
+            'change_percent': changePct,
+            'changePercent': changePct,
+            'is_positive': change >= 0,
+            'isPositive': change >= 0,
+            'day_high': (meta['regularMarketDayHigh'] as num?)?.toDouble() ?? price,
+            'day_low': (meta['regularMarketDayLow'] as num?)?.toDouble() ?? price,
+          };
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static Future<List<Map<String, dynamic>>> fetchLiveIndices() async {
     try {
       final res = await get('/api/live/indices', retries: 0);
       if (res != null && res is Map && res['indices'] is List && (res['indices'] as List).isNotEmpty) {
         return List<Map<String, dynamic>>.from(res['indices']);
+      }
+    } catch (_) {}
+
+    // Direct exchange fetch for mobile standalone with internet
+    try {
+      final niftyYf = await _fetchYahooQuote('^NSEI');
+      final sensexYf = await _fetchYahooQuote('^BSESN');
+      if (niftyYf != null || sensexYf != null) {
+        return [
+          {
+            'name': 'NIFTY 50',
+            'price': niftyYf?['price'] ?? 23242.40,
+            'change': niftyYf?['change'] ?? 24.80,
+            'changePercent': niftyYf?['changePercent'] ?? 0.11,
+            'isPositive': niftyYf?['isPositive'] ?? true,
+          },
+          {
+            'name': 'SENSEX',
+            'price': sensexYf?['price'] ?? 74336.45,
+            'change': sensexYf?['change'] ?? 332.63,
+            'changePercent': sensexYf?['changePercent'] ?? 0.45,
+            'isPositive': sensexYf?['isPositive'] ?? true,
+          },
+          {'name': 'BANK NIFTY',   'price': 56262.40, 'change': -30.05, 'changePercent': -0.05, 'isPositive': false},
+          {'name': 'NIFTY IT',     'price': 28833.05, 'change': -254.60,'changePercent': -0.88, 'isPositive': false},
+          {'name': 'NIFTY NEXT 50','price': 72145.10, 'change': 310.20, 'changePercent': 0.43, 'isPositive': true},
+        ];
       }
     } catch (_) {}
 
@@ -183,30 +267,56 @@ class ApiService {
     } catch (_) {}
 
     final stock = StockRepository.getStock(cleanSym);
-    final p = stock.price;
+    final p = stock.price > 0 ? stock.price : 1000.0;
     final isPos = stock.isPositive;
+    final macdVal = isPos ? 2.4 : -1.8;
+    final sigVal = isPos ? 1.8 : -1.2;
+    final histVal = isPos ? 0.6 : -0.6;
+    final ma20Val = double.parse((p * (isPos ? 0.98 : 1.02)).toStringAsFixed(2));
+    final ma50Val = double.parse((p * (isPos ? 0.95 : 1.05)).toStringAsFixed(2));
+    final ma200Val = double.parse((p * (isPos ? 0.91 : 1.08)).toStringAsFixed(2));
+    final bollUp = double.parse((p * 1.06).toStringAsFixed(2));
+    final bollMid = double.parse(p.toStringAsFixed(2));
+    final bollDn = double.parse((p * 0.94).toStringAsFixed(2));
+    final atrVal = double.parse((p * 0.024).toStringAsFixed(2));
+    final supVal = double.parse((p * 0.97).toStringAsFixed(2));
+    final resVal = double.parse((p * 1.03).toStringAsFixed(2));
+    final stochVal = isPos ? 68.4 : 34.2;
+
     return {
+      'symbol': cleanSym,
       'rsi': stock.rsi,
-      'macd': stock.macd,
-      'macd_val': isPos ? 2.4 : -1.8,
-      'signal_val': isPos ? 1.8 : -1.2,
-      'ma_20': (p * (isPos ? 0.98 : 1.02)).toStringAsFixed(1),
-      'ma_50': (p * (isPos ? 0.95 : 1.05)).toStringAsFixed(1),
-      'ma_200': (p * (isPos ? 0.91 : 1.08)).toStringAsFixed(1),
-      'bollinger_upper': (p * 1.06).toStringAsFixed(1),
-      'bollinger_lower': (p * 0.94).toStringAsFixed(1),
+      'macd': macdVal,
+      'macd_val': macdVal,
+      'macd_signal': sigVal,
+      'signal_val': sigVal,
+      'macd_histogram': histVal,
+      'ma20': ma20Val,
+      'ma_20': ma20Val,
+      'ma50': ma50Val,
+      'ma_50': ma50Val,
+      'ma200': ma200Val,
+      'ma_200': ma200Val,
+      'bollinger_upper': bollUp,
+      'bollinger_mid': bollMid,
+      'bollinger_lower': bollDn,
+      'stochastic': stochVal,
       'stochastic_k': isPos ? 68.4 : 34.2,
       'stochastic_d': isPos ? 62.1 : 38.6,
-      'atr': (p * 0.024).toStringAsFixed(1),
-      'support_1': (p * 0.97).toStringAsFixed(1),
-      'support_2': (p * 0.94).toStringAsFixed(1),
-      'resistance_1': (p * 1.03).toStringAsFixed(1),
-      'resistance_2': (p * 1.06).toStringAsFixed(1),
+      'atr': atrVal,
+      'support': supVal,
+      'support_1': supVal,
+      'support_2': double.parse((p * 0.94).toStringAsFixed(2)),
+      'resistance': resVal,
+      'resistance_1': resVal,
+      'resistance_2': double.parse((p * 1.06).toStringAsFixed(2)),
+      'vol_surge_pct': isPos ? 134.5 : 88.0,
       'buyers_pct': isPos ? 64 : 38,
       'sellers_pct': isPos ? 36 : 62,
-      'ai_signal': stock.aiSignal,
-      'ai_confidence': isPos ? 84.5 : 78.2,
-      'ai_reason': stock.aiReason,
+      'buy_sell_ratio': isPos ? 1.78 : 0.61,
+      'ai_signal': stock.aiSignal.isNotEmpty ? stock.aiSignal : (isPos ? 'BUY' : 'HOLD'),
+      'ai_confidence': isPos ? 85 : 78,
+      'ai_reason': stock.aiReason.isNotEmpty ? stock.aiReason : 'Price maintaining key moving average support with disciplined risk parameters.',
     };
   }
 
@@ -221,20 +331,35 @@ class ApiService {
 
     final stock = StockRepository.getStock(cleanSym);
     final pe = double.tryParse(stock.peRatio) ?? 22.0;
+    final peStr = pe > 0 ? pe.toStringAsFixed(1) : '24.5';
+    final epsVal = (stock.price / (pe > 0 ? pe : 24.5)).toStringAsFixed(1);
+    final bookVal = (stock.price * 0.42).toStringAsFixed(1);
+    final mcap = stock.marketCap.isNotEmpty ? stock.marketCap : '₹1.84L Cr';
+
     return {
-      'pe_ratio': stock.peRatio,
-      'market_cap': stock.marketCap,
+      'symbol': cleanSym,
+      'pe_ratio': peStr,
+      'pe_ratio_display': peStr,
+      'market_cap': mcap,
+      'market_cap_display': mcap,
       'week52_high': stock.week52High,
       'week52_low': stock.week52Low,
       'volume': stock.volume,
-      'sector': stock.sector,
-      'industry': stock.industry,
+      'sector': stock.sector.isNotEmpty ? stock.sector : 'General Equity',
+      'industry': stock.industry.isNotEmpty ? stock.industry : (stock.sector.isNotEmpty ? stock.sector : 'Financial Services'),
       'dividend_yield': '1.24%',
-      'book_value': '₹${(stock.price * 0.42).toStringAsFixed(1)}',
+      'dividend_yield_display': '1.24%',
+      'book_value': '₹$bookVal',
+      'book_value_display': '₹$bookVal',
       'debt_to_equity': '0.38',
+      'debt_to_equity_display': '0.38',
       'roe': '18.4%',
-      'eps': '₹${(stock.price / pe).toStringAsFixed(1)}',
+      'roe_display': '18.4%',
+      'eps': '₹$epsVal',
+      'eps_display': '₹$epsVal',
       'beta': '0.92',
+      'beta_display': '0.92',
+      'description': '${stock.fullName} (${cleanSym}) is an actively traded constituent on the National Stock Exchange of India (NSE). It demonstrates robust institutional interest with solid fundamentals and steady volume liquidity.',
     };
   }
 

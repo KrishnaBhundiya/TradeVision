@@ -41,6 +41,7 @@ class RealStockChart extends StatefulWidget {
 
   final bool showHeader;
   final EdgeInsetsGeometry? padding;
+  final ValueChanged<double>? onPriceTick;
 
   const RealStockChart({
     super.key,
@@ -50,6 +51,7 @@ class RealStockChart extends StatefulWidget {
     this.onChartTypeChanged,
     this.showHeader = true,
     this.padding,
+    this.onPriceTick,
   });
 
   @override
@@ -297,13 +299,13 @@ class _RealStockChartState extends State<RealStockChart> {
 
     _liveTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
       if (!mounted || _data.isEmpty) return;
-      setState(() {
-        final last = _data.last;
-        final tickPct = (_random.nextDouble() - 0.49) * 0.0035;
-        final newPrice = double.parse((last.close * (1 + tickPct)).toStringAsFixed(2));
-        final newHigh = max(last.high, newPrice);
-        final newLow = min(last.low, newPrice);
+      final last = _data.last;
+      final tickPct = (_random.nextDouble() - 0.49) * 0.0035;
+      final newPrice = double.parse((last.close * (1 + tickPct)).toStringAsFixed(2));
+      final newHigh = max(last.high, newPrice);
+      final newLow = min(last.low, newPrice);
 
+      setState(() {
         // Update last candle (live tick on current candle)
         _data[_data.length - 1] = OHLCData(
           time: last.time,
@@ -317,6 +319,7 @@ class _RealStockChartState extends State<RealStockChart> {
         _currentPrice = newPrice;
         _isPositive = _effectiveIsPositive;
       });
+      widget.onPriceTick?.call(newPrice);
     });
   }
 
