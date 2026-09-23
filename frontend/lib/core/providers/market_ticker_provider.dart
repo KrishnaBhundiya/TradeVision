@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../data/stock_data.dart';
 import '../../services/api_service.dart';
+import '../../services/alert_service.dart';
 
 class MarketTickerNotifier extends ChangeNotifier {
   late List<StockModel> _stocks;
@@ -69,6 +70,7 @@ class MarketTickerNotifier extends ChangeNotifier {
         if (q != null && q['current_price'] != null) {
           final model = StockModel.fromMasterJson(q);
           StockRepository.registerStock(model);
+          AlertService.instance.evaluateStock(model);
           final idx = _stocks.indexWhere((s) => s.ticker == t);
           if (idx != -1) {
             _stocks[idx] = model;
@@ -134,6 +136,7 @@ class MarketTickerNotifier extends ChangeNotifier {
     );
     _stocks[index] = updatedStock;
     StockRepository.registerStock(updatedStock);
+    AlertService.instance.evaluateStock(updatedStock);
 
     _tickDirections[stock.ticker] = isUp ? 1 : -1;
     _updateIndices();

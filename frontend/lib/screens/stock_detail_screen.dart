@@ -20,6 +20,9 @@ import 'package:provider/provider.dart' as provider;
 import '../core/providers/portfolio_provider.dart';
 import '../widgets/ticker_logo.dart';
 import '../widgets/swipe_to_execute_button.dart';
+import '../widgets/create_alert_sheet.dart';
+import '../services/alert_service.dart';
+import '../widgets/xai_contribution_widget.dart';
 
 
 class StockDetailScreen extends ConsumerStatefulWidget {
@@ -102,6 +105,13 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
           _techLoading = false;
           _fundLoading = false;
         });
+        final sig = _technicals['ai_signal'] as String? ?? _stock.aiSignal;
+        final rsiVal = _toDbl(_technicals['rsi']);
+        AlertService.instance.evaluateSignal(
+          ticker: _stock.ticker,
+          signal: sig,
+          rsi: rsiVal,
+        );
       }
     } catch (_) {
       if (mounted) {
@@ -220,6 +230,19 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                 color: const Color(0xFF0066CC),
               ),
             ),
+          ),
+          // Price Alert trigger button
+          IconButton(
+            icon: const Icon(
+              Icons.add_alert_rounded,
+              color: Color(0xFF0066CC),
+              size: 22,
+            ),
+            tooltip: 'Set Price Alert',
+            onPressed: () {
+              HapticFeedback.mediumImpact();
+              CreateAlertSheet.show(context, _stock);
+            },
           ),
           // Bookmark with optimistic micro-bounce and feedback
           IconButton(
@@ -914,6 +937,28 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                         quantity: quantity,
                         onConfirmed: () {
                           final portfolio = provider.Provider.of<PortfolioProvider>(context, listen: false);
+                          final cost = _stock.price * quantity;
+                          if (isBuy && portfolio.virtualCash < cost) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Insufficient simulated balance! Available: ${currencyFormatter.format(portfolio.virtualCash)}'),
+                                backgroundColor: const Color(0xFFFF3B3B),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            return;
+                          }
+                          final currentHolding = portfolio.getHoldingQuantity(_stock.ticker);
+                          if (!isBuy && currentHolding < quantity) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Cannot sell $quantity shares. You hold $currentHolding shares of ${_stock.ticker}.'),
+                                backgroundColor: const Color(0xFFFF3B3B),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            return;
+                          }
                           if (isBuy) {
                             portfolio.buyStock(_stock, quantity);
                           } else {
@@ -1205,6 +1250,19 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen>
                 isDark: isDark,
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Explainable AI (XAI) Feature Attribution (SHAP / LSTM) ──
+          XaiContributionWidget(
+            ticker: _stock.ticker,
+            signal: aiSignal,
+            confidence: confidence.toDouble(),
+            rsi: rsi,
+            macd: macd,
+            buyersPct: buyersPct,
+            sellersPct: sellersPct,
+            isDark: isDark,
           ),
         ],
       ),

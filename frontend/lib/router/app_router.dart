@@ -16,6 +16,8 @@ import '../screens/watchlist_screen.dart';
 import '../screens/market_charts_screen.dart';
 import '../screens/ai_insights_screen.dart';
 import '../screens/analysis_screen.dart';
+import '../screens/paper_trading_screen.dart';
+import '../screens/sentiment_heatmap_screen.dart';
 import '../core/data/stock_data.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -245,6 +247,34 @@ final routerProvider = Provider<GoRouter>((ref) {
           child: AnalysisScreen(
             currentStock: StockRepository.stocks.first,
           ),
+          transitionsBuilder: (_, anim, secondaryAnim, child) {
+            return FadeTransition(
+              opacity: CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 350),
+          reverseTransitionDuration: const Duration(milliseconds: 280),
+        ),
+      ),
+      GoRoute(
+        path: '/paper-trading',
+        pageBuilder: (context, state) => CustomTransitionPage(
+          child: const PaperTradingScreen(),
+          transitionsBuilder: (_, anim, secondaryAnim, child) {
+            return FadeTransition(
+              opacity: CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 350),
+          reverseTransitionDuration: const Duration(milliseconds: 280),
+        ),
+      ),
+      GoRoute(
+        path: '/sentiment-heatmap',
+        pageBuilder: (context, state) => CustomTransitionPage(
+          child: const SentimentHeatmapScreen(),
           transitionsBuilder: (_, anim, secondaryAnim, child) {
             return FadeTransition(
               opacity: CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
